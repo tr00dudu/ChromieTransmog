@@ -283,6 +283,27 @@ StaticPopupDialogs["CHROMIE_TRANSMOG_APPLY_CONFIRM"] = {
     showAlert = 1,
 }
 
+StaticPopupDialogs["CHROMIE_TRANSMOG_VENDOR_MODE"] = {
+    text = "Warpweaver is using the vendor item list (.t i on). ChromieTransmog needs the gossip list (.t i off).\n\nSwitch it off now? Then talk to Warpweaver again.",
+    button1 = "Switch off",
+    button2 = TEXT(CANCEL),
+    OnAccept = function()
+        if Transmog.ChromieSendInterfaceOff then
+            Transmog:ChromieSendInterfaceOff()
+        end
+        if Transmog.ChromieForceCloseGossip then
+            Transmog:ChromieForceCloseGossip()
+        end
+        if CloseMerchant then
+            CloseMerchant()
+        end
+    end,
+    timeout = 0,
+    whileDead = 1,
+    hideOnEscape = 1,
+    showAlert = 1,
+}
+
 -- Sends pending transmog changes through ChromieCraft gossip/vendor.
 function Apply_OnClick()
     local pending, copper = Transmog:ChromiePendingCost()

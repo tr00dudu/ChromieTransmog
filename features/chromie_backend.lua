@@ -931,6 +931,27 @@ function Transmog:ChromieOnGossipShow()
     end
 end
 
+function Transmog:ChromieSendInterfaceOff()
+    local box = ChatFrame1EditBox or (DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.editBox)
+    if not box or not ChatEdit_SendText then
+        self:Chat("Type .t i off in chat, then talk to Warpweaver again.")
+        return
+    end
+    local old = box:GetText() or ""
+    box:SetText(".t i off")
+    ChatEdit_SendText(box, 0)
+    box:SetText(old)
+    self:Chat("Sent .t i off. Talk to Warpweaver again, then pick a slot.")
+end
+
+function Transmog:ChromieNotifyVendorMode()
+    if self.chromieVendorPopupShown then
+        return
+    end
+    self.chromieVendorPopupShown = true
+    StaticPopup_Show("CHROMIE_TRANSMOG_VENDOR_MODE")
+end
+
 function Transmog:ChromieOnMerchantShow()
     if not self:ChromieShouldIntercept() then
         return
@@ -951,24 +972,20 @@ function Transmog:ChromieOnMerchantShow()
 
     self:ChromieHideBlizzard()
 
-    if self.chromieJob == "load" then
-        local n = GetMerchantNumItems() or 0
+    -- Slot appearances as a fake vendor (.t i on / UseVendorInterface). Overlay
+    -- scrape/apply is gossip-list based; warn instead of half-loading one page.
+    if self.chromieJob == "load" or self.chromieJob == "open" or self.chromieJob == "apply" then
         if self.ChromieLog then
-            self:ChromieLog("Vendor interface with " .. n .. " items")
+            self:ChromieLog("Vendor item list detected job=" .. tostring(self.chromieJob))
         end
-        local i = 1
-        while i <= n do
-            local link = GetMerchantItemLink(i)
-            local id = link and tonumber(string.match(link, "item:(%d+)"))
-            if id and not VENDOR_SKIP[id] then
-                self:ChromieAddCached(self.chromieLoadSlot, id)
-            end
-            i = i + 1
+        if self.chromieJob == "load" then
+            self.chromieJob = "open"
+            self.chromieLoadEnteredSlot = nil
+            ChromieTransmogFrameNoTransmogs:SetText("Vendor item list is on (.t i on).\nSwitch to .t i off, then select a slot again.")
+            ChromieTransmogFrameNoTransmogs:Show()
         end
-        self:ChromiePublish(self.chromieLoadSlot)
-        self.chromieJob = "open"
-    elseif self.chromieJob == "apply" then
-        self:ChromieHandleApplyMerchant()
+        self:ChromieNotifyVendorMode()
+        return
     end
 end
 

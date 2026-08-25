@@ -142,6 +142,7 @@ function Transmog_OnHide()
         return
     end
     Transmog.chromieVendorOpen = nil
+    Transmog.chromieVendorPopupShown = nil
     -- CloseGossip is wrapped to keep the session alive while the overlay is
     -- shown; OnHide must actually end gossip so the next talk is a fresh menu.
     Transmog.allowGossipClose = true
