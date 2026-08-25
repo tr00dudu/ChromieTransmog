@@ -1,4 +1,4 @@
-local Transmog = _G.Transmog
+local Transmog = _G.ChromieTransmog
 local _, race = UnitRace('player')
 local _, class = UnitClass('player')
 
@@ -10,6 +10,12 @@ if Transmog.race ~= 'human' and Transmog.race ~= 'gnome' and Transmog.race ~= 'd
 end
 
 Transmog.prefix = "transmog"
+
+-- azerothcore/mod-transmog default NPCs (ChromieCraft Warpweaver / portable pet).
+Transmog.CHROMIE_NPC_IDS = {
+    [190010] = true,
+    [190011] = true,
+}
 
 Transmog.inventorySlots = {
     ['HeadSlot'] = 1,
@@ -41,10 +47,11 @@ Transmog.inventorySlotNames = {
     [18] = "Ranged Slot"
 }
 
--- Must stay in sync with HIDDEN_ITEM_ID in mod-transmog-plus/src/Transmog.h.
-Transmog.HIDDEN_ITEM_ID = 999999
+-- Must stay in sync with HIDDEN_ITEM_ID in azerothcore/mod-transmog (item id 1).
+Transmog.HIDDEN_ITEM_ID = 1
+Transmog.UNKNOWN_MOG_ID = -1
 
--- Slots that can be hidden. Mirrors server-side TransmogRules_IsArmorSlot().
+-- Slots that can be hidden. ChromieCraft gossip offers Hide Slot on weapons too.
 Transmog.hideableSlots = {
     [1] = true,  -- Head
     [3] = true,  -- Shoulder
@@ -55,6 +62,9 @@ Transmog.hideableSlots = {
     [9] = true,  -- Wrist
     [10] = true, -- Hands
     [15] = true, -- Back
+    [16] = true, -- Main Hand
+    [17] = true, -- Off Hand
+    [18] = true, -- Ranged
 }
 
 Transmog.invTypes = {

@@ -1,12 +1,23 @@
-local Transmog = _G.Transmog
-local TransmogFrame_Find = string.find
-local TransmogFrame_ToNumber = tonumber
+local Transmog = _G.ChromieTransmog
+local ChromieTransmogFrame_Find = string.find
+local ChromieTransmogFrame_ToNumber = tonumber
 
 -- Extracts item ID from an item link string.
 function Transmog:IDFromLink(link)
-    local itemSplit = TransmogFrame_Explode(link, ':')
-    if itemSplit[2] and TransmogFrame_ToNumber(itemSplit[2]) then
-        return TransmogFrame_ToNumber(itemSplit[2])
+    local itemSplit = ChromieTransmogFrame_Explode(link, ':')
+    if itemSplit[2] and ChromieTransmogFrame_ToNumber(itemSplit[2]) then
+        return ChromieTransmogFrame_ToNumber(itemSplit[2])
+    end
+    return nil
+end
+
+function Transmog:ChromieLinkUniqueId(link)
+    if not link then
+        return nil
+    end
+    local unique = string.match(link, "item:%d+:%d+:%d+:%d+:%d+:%d+:%d+:(%-?%d+)")
+    if unique and unique ~= "0" then
+        return unique
     end
     return nil
 end
@@ -33,14 +44,14 @@ function Transmog:ceil(num)
 end
 
 -- Splits a string by delimiter, similar to string.split.
-function TransmogFrame_Explode(str, delimiter)
+function ChromieTransmogFrame_Explode(str, delimiter)
     local result = {}
     local from = 1
-    local delim_from, delim_to = TransmogFrame_Find(str, delimiter, from, 1, true)
+    local delim_from, delim_to = ChromieTransmogFrame_Find(str, delimiter, from, 1, true)
     while delim_from do
         table.insert(result, string.sub(str, from, delim_from - 1))
         from = delim_to + 1
-        delim_from, delim_to = TransmogFrame_Find(str, delimiter, from, true)
+        delim_from, delim_to = ChromieTransmogFrame_Find(str, delimiter, from, true)
     end
     table.insert(result, string.sub(str, from))
     return result

@@ -1,6 +1,6 @@
-local Transmog = _G.Transmog
+local Transmog = _G.ChromieTransmog
 
-transmogOutfits = {}
+ChromieTransmogOutfits = {}
 Transmog.availableTransmogItems = {}
 Transmog.ItemButtons = {}
 Transmog.currentTransmogSlotName = nil
@@ -17,5 +17,5 @@ Transmog.tab = ''
 Transmog.equippedItems = {}
 Transmog.currentOutfit = nil
 Transmog.equippedTransmogs = {}
-
+Transmog.transmogGossipIcon = {}
 Transmog.localCache = {}

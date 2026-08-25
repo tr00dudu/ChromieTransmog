@@ -1,4 +1,4 @@
-local Transmog = _G.Transmog
+local Transmog = _G.ChromieTransmog
 
 -- Initializes the transmog addon on load: sets up UI, hooks, and pre-caches items.
 function Transmog_OnLoad()
@@ -13,18 +13,18 @@ function Transmog_OnLoad()
 
     Transmog:cacheItem(51217)
 
-    TransmogFrameInstructions:SetText("Are you tired of wearing the same armor every day?\nSelect the item you wish to change and enjoy your new stylish look.")
-    TransmogFrameNoTransmogs:SetText("You have yet to uncover any kind of appearance for this item. \nThe appearance will unlock after you equip the item.")
+    ChromieTransmogFrameInstructions:SetText("Are you tired of wearing the same armor every day?\nSelect the item you wish to change and enjoy your new stylish look.")
+    ChromieTransmogFrameNoTransmogs:SetText("You have yet to uncover any kind of appearance for this item. \nThe appearance will unlock after you equip the item.")
 
-    if not transmogOutfits then
-        transmogOutfits = {}
+    if not ChromieTransmogOutfits then
+        ChromieTransmogOutfits = {}
     end
 
-    UIDropDownMenu_Initialize(TransmogFrameOutfits, OutfitsDropDown_Initialize);
-    UIDropDownMenu_SetWidth(TransmogFrameOutfits, 123);
-    TransmogFrameSaveOutfit:Disable()
-    TransmogFrameDeleteOutfit:Disable()
-    UIDropDownMenu_SetText(TransmogFrameOutfits, "Outfits")
+    UIDropDownMenu_Initialize(ChromieTransmogFrameOutfits, OutfitsDropDown_Initialize);
+    UIDropDownMenu_SetWidth(ChromieTransmogFrameOutfits, 123);
+    ChromieTransmogFrameSaveOutfit:Disable()
+    ChromieTransmogFrameDeleteOutfit:Disable()
+    UIDropDownMenu_SetText(ChromieTransmogFrameOutfits, "Outfits")
 
     Transmog:CacheEquippedGear()
 
@@ -41,14 +41,22 @@ function Transmog_OnLoad()
     local TWFHookSetInventoryItem = GameTooltip.SetInventoryItem
     function GameTooltip.SetInventoryItem(self, unit, slot)
         GameTooltip.itemLink = GetInventoryItemLink(unit, slot)
-        return TWFHookSetInventoryItem(self, unit, slot)
+        local ok = TWFHookSetInventoryItem(self, unit, slot)
+        if Transmog.ChromieAttachTransmogTooltip then
+            Transmog:ChromieAttachTransmogTooltip(self, unit, slot)
+        end
+        return ok
     end
 
     local TWFHookSetBagItem = GameTooltip.SetBagItem
     function GameTooltip.SetBagItem(self, container, slot)
         GameTooltip.itemLink = GetContainerItemLink(container, slot)
         _, GameTooltip.itemCount = GetContainerItemInfo(container, slot)
-        return TWFHookSetBagItem(self, container, slot)
+        local ok = TWFHookSetBagItem(self, container, slot)
+        if Transmog.ChromieAttachTransmogTooltip then
+            Transmog:ChromieAttachTransmogTooltip(self, nil, nil, GameTooltip.itemLink)
+        end
+        return ok
     end
 
 	twfdebug("Transmog_OnLoad end")
@@ -58,56 +66,58 @@ end
 function Transmog:LoadOnce()
 
 	twfdebug("LoadOnce")
-    self:aSend("GetTransmogStatus")
-	self:aSend("GetAvailableTransmogs")
+    self:ChromieInitStatus()
 end
 
 -- Sets up the transmog frame UI, model controls, and initial state when shown.
-function TransmogFrame_OnShow()
+function ChromieTransmogFrame_OnShow()
 
-	twfdebug("TransmogFrame_OnShow start")
+	twfdebug("ChromieTransmogFrame_OnShow start")
 
+    Transmog.currentTransmogSlot = nil
+    Transmog.currentTransmogSlotName = nil
+    Transmog.currentTransmogItemClass = nil
     Transmog_switchTab('items')
-    SetPortraitTexture(TransmogFramePortrait, "target");
+    SetPortraitTexture(ChromieTransmogFramePortrait, UnitExists("npc") and "npc" or "target");
 
     Transmog:Reset()
 
 	Transmog:hideItems(false)
 
-    TransmogFramePlayerModel:SetScript('OnMouseUp', function(self)
-        TransmogFramePlayerModel:SetScript('OnUpdate', nil)
+    ChromieTransmogFramePlayerModel:SetScript('OnMouseUp', function(self)
+        ChromieTransmogFramePlayerModel:SetScript('OnUpdate', nil)
     end)
 
-    TransmogFramePlayerModel:SetScript('OnMouseWheel', function(self, spining)
-        local Z, X, Y = TransmogFramePlayerModel:GetPosition()
+    ChromieTransmogFramePlayerModel:SetScript('OnMouseWheel', function(self, spining)
+        local Z, X, Y = ChromieTransmogFramePlayerModel:GetPosition()
         Z = (arg1 > 0 and Z + 1 or Z - 1)
 
-        TransmogFramePlayerModel:SetPosition(Z, X, Y)
+        ChromieTransmogFramePlayerModel:SetPosition(Z, X, Y)
     end)
 
-    TransmogFramePlayerModel:SetScript('OnMouseDown', function()
+    ChromieTransmogFramePlayerModel:SetScript('OnMouseDown', function()
         local StartX, StartY = GetCursorPosition()
 
         local EndX, EndY, Z, X, Y
         if arg1 == 'LeftButton' then
-            TransmogFramePlayerModel:SetScript('OnUpdate', function(self)
+            ChromieTransmogFramePlayerModel:SetScript('OnUpdate', function(self)
                 EndX, EndY = GetCursorPosition()
 
-                TransmogFramePlayerModel.rotation = (EndX - StartX) / 34 + TransmogFramePlayerModel:GetFacing()
+                ChromieTransmogFramePlayerModel.rotation = (EndX - StartX) / 34 + ChromieTransmogFramePlayerModel:GetFacing()
 
-                TransmogFramePlayerModel:SetFacing(TransmogFramePlayerModel.rotation)
+                ChromieTransmogFramePlayerModel:SetFacing(ChromieTransmogFramePlayerModel.rotation)
 
                 StartX, StartY = GetCursorPosition()
             end)
         elseif arg1 == 'RightButton' then
-            TransmogFramePlayerModel:SetScript('OnUpdate', function(self)
+            ChromieTransmogFramePlayerModel:SetScript('OnUpdate', function(self)
                 EndX, EndY = GetCursorPosition()
 
-                Z, X, Y = TransmogFramePlayerModel:GetPosition(Z, X, Y)
+                Z, X, Y = ChromieTransmogFramePlayerModel:GetPosition(Z, X, Y)
                 X = (EndX - StartX) / 45 + X
                 Y = (EndY - StartY) / 45 + Y
 
-                TransmogFramePlayerModel:SetPosition(Z, X, Y)
+                ChromieTransmogFramePlayerModel:SetPosition(Z, X, Y)
                 StartX, StartY = GetCursorPosition()
             end)
         end
@@ -116,7 +126,30 @@ end
 
 -- Cleans up state when the transmog frame is hidden.
 function Transmog_OnHide()
+    if Transmog.ChromieAbortMultiApply then
+        Transmog:ChromieAbortMultiApply()
+    end
+    Transmog.chromieJob = nil
+    if Transmog.skipCloseOnHide then
+        twfdebug("Transmog_OnHide skip close")
+        PlaySound("igCharacterInfoClose");
+        Transmog.currentTransmogSlotName = nil
+        Transmog.currentTransmogSlot = nil
+        Transmog.currentOutfit = nil
+        ChromieTransmogFrameSaveOutfit:Disable()
+        ChromieTransmogFrameDeleteOutfit:Disable()
+        UIDropDownMenu_SetText(ChromieTransmogFrameOutfits, "Outfits")
+        return
+    end
+    Transmog.chromieVendorOpen = nil
+    -- CloseGossip is wrapped to keep the session alive while the overlay is
+    -- shown; OnHide must actually end gossip so the next talk is a fresh menu.
+    Transmog.allowGossipClose = true
     CloseGossip()
+    Transmog.allowGossipClose = nil
+    if CloseMerchant then
+        CloseMerchant()
+    end
     HideUIPanel(GossipFrame)
     GossipFrame:Hide()
 	twfdebug("Transmog_OnHide")
@@ -125,9 +158,9 @@ function Transmog_OnHide()
     Transmog.currentTransmogSlotName = nil
     Transmog.currentTransmogSlot = nil
     Transmog.currentOutfit = nil
-    TransmogFrameSaveOutfit:Disable()
-    TransmogFrameDeleteOutfit:Disable()
-    UIDropDownMenu_SetText(TransmogFrameOutfits, "Outfits")
+    ChromieTransmogFrameSaveOutfit:Disable()
+    ChromieTransmogFrameDeleteOutfit:Disable()
+    UIDropDownMenu_SetText(ChromieTransmogFrameOutfits, "Outfits")
 end
 
 -- Resets the transmog UI to its default state, optionally without re-requesting server data.
@@ -136,22 +169,23 @@ function Transmog:Reset(once)
 	twfdebug("Reset")
 
     if not once then
-        self:aSend("GetTransmogStatus")
-        self:aSend("GetAvailableTransmogs")
+        self:ChromieInitStatus()
+        self:transmogStatus()
     end
 
-    TransmogFrameRaceBackground:SetTexture("Interface\\AddOns\\Transmog\\assets\\transmogbackground" .. self.race)
-    TransmogFrameSplash:Show()
-    TransmogFrameInstructions:Show()
-    TransmogFrameApplyButton:Disable()
+    ChromieTransmogFrameRaceBackground:SetTexture("Interface\\AddOns\\ChromieTransmog\\assets\\transmogbackground" .. self.race)
+    ChromieTransmogFrameApplyButton:Disable()
 
     self.currentPage = 1
+    self.currentTransmogSlot = nil
+    self.currentTransmogSlotName = nil
+    self.currentTransmogItemClass = nil
 
-	TransmogFrameCurrencyText:Hide()
+	ChromieTransmogFrameCurrencyText:Hide()
 
-    TransmogFramePlayerModel:SetUnit("player")
+    ChromieTransmogFramePlayerModel:SetUnit("player")
 
-    Transmog_switchTab(self.tab)
-    AddButtonOnEnterTextTooltip(TransmogFrameRevert, "Reset")
+    Transmog_switchTab(self.tab ~= "" and self.tab or "items")
+    AddButtonOnEnterTextTooltip(ChromieTransmogFrameRevert, "Reset")
 
 end

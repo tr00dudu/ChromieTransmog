@@ -1,5 +1,5 @@
-local Transmog = _G.Transmog
-local TransmogFrame_Find = string.find
+local Transmog = _G.ChromieTransmog
+local ChromieTransmogFrame_Find = string.find
 local GAME_YELLOW = "|cffffd200"
 Transmog.slotGlowFrames = {}
 
@@ -350,7 +350,7 @@ function Transmog:addWonItem(itemID)
 
     if name then
 
-        local _, _, itemLink = TransmogFrame_Find(linkString, "(item:%d+:%d+:%d+:%d+)");
+        local _, _, itemLink = ChromieTransmogFrame_Find(linkString, "(item:%d+:%d+:%d+:%d+)");
 
         self:cacheItem(itemID)
 
@@ -448,7 +448,7 @@ Transmog.newTransmogAlert:SetScript("OnUpdate", function()
                     if Transmog.newTransmogAlert.wonItems[i].doAnim then
 
                         local backdrop = {
-                            bgFile = 'Interface\\AddOns\\Transmog\\assets\\anim\\' .. image,
+                            bgFile = 'Interface\\AddOns\\ChromieTransmog\\assets\\anim\\' .. image,
                             tile = false
                         };
                         if Transmog.newTransmogAlert.wonItems[i].frameIndex <= 30 then

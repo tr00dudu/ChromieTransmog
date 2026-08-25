@@ -1,6 +1,6 @@
-local Transmog = _G.Transmog
-local TransmogFrame_Find = string.find
-local TransmogFrame_ToNumber = tonumber
+local Transmog = _G.ChromieTransmog
+local ChromieTransmogFrame_Find = string.find
+local ChromieTransmogFrame_ToNumber = tonumber
 
 -- Updates the UI to reflect current transmog status from the server.
 function Transmog:transmogStatus()
@@ -9,11 +9,17 @@ function Transmog:transmogStatus()
     for InventorySlotId, itemID in pairs(self.transmogStatusFromServer) do
 		if itemID ~= 0 then
 
-			if itemID == Transmog.HIDDEN_ITEM_ID then
+            if itemID == Transmog.HIDDEN_ITEM_ID then
 				if GetInventoryItemLink('player', InventorySlotId) then
-					local _, _, eqItemLink = TransmogFrame_Find(GetInventoryItemLink('player', InventorySlotId), "(item:%d+:%d+:%d+:%d+)");
+					local _, _, eqItemLink = ChromieTransmogFrame_Find(GetInventoryItemLink('player', InventorySlotId), "(item:%d+:%d+:%d+:%d+)");
 					local eName = GetItemInfo(eqItemLink)
 					self.equippedTransmogs[eName] = "(Hidden)"
+				end
+			elseif itemID == Transmog.UNKNOWN_MOG_ID then
+				if GetInventoryItemLink('player', InventorySlotId) then
+					local _, _, eqItemLink = ChromieTransmogFrame_Find(GetInventoryItemLink('player', InventorySlotId), "(item:%d+:%d+:%d+:%d+)");
+					local eName = GetItemInfo(eqItemLink)
+					self.equippedTransmogs[eName] = "(Transmogged)"
 				end
 			else
 
@@ -21,7 +27,7 @@ function Transmog:transmogStatus()
 
 				if TransmogItemName then
 					if GetInventoryItemLink('player', InventorySlotId) then
-						local _, _, eqItemLink = TransmogFrame_Find(GetInventoryItemLink('player', InventorySlotId), "(item:%d+:%d+:%d+:%d+)");
+						local _, _, eqItemLink = ChromieTransmogFrame_Find(GetInventoryItemLink('player', InventorySlotId), "(item:%d+:%d+:%d+:%d+)");
 						local eName = GetItemInfo(eqItemLink)
 						self.equippedTransmogs[eName] = TransmogItemName
 					end
@@ -39,7 +45,7 @@ function Transmog:transmogStatus()
         if frame then
 
             local texture
-            local texEx = TransmogFrame_Explode(frame:GetName(), 'Slot')
+            local texEx = ChromieTransmogFrame_Explode(frame:GetName(), 'Slot')
             texture = string.lower(texEx[1])
 
             if texture == 'wrist' then
@@ -62,7 +68,7 @@ function Transmog:transmogStatus()
         self.equippedItems[InventorySlotId] = 0
         if GetInventoryItemLink('player', InventorySlotId) then
 
-            local _, _, eqItemLink = TransmogFrame_Find(GetInventoryItemLink('player', InventorySlotId), "(item:%d+:%d+:%d+:%d+)");
+            local _, _, eqItemLink = ChromieTransmogFrame_Find(GetInventoryItemLink('player', InventorySlotId), "(item:%d+:%d+:%d+:%d+)");
             local itemName, _, _, _, _, _, _, _, _, tex = GetItemInfo(eqItemLink)
 
             self.equippedItems[InventorySlotId] = self:IDFromLink(eqItemLink)
@@ -88,7 +94,7 @@ function Transmog:transmogStatus()
                     if self.transmogStatusFromServer[InventorySlotId] == Transmog.HIDDEN_ITEM_ID then
                         AddButtonOnEnterTooltipFashion(frame, eqItemLink, "(Hidden)", true)
 
-                        local emptyTexture = string.lower(TransmogFrame_Explode(slotName, 'Slot')[1])
+                        local emptyTexture = string.lower(ChromieTransmogFrame_Explode(slotName, 'Slot')[1])
                         if emptyTexture == 'wrist' then
                             emptyTexture = emptyTexture .. 's'
                         end
@@ -96,10 +102,17 @@ function Transmog:transmogStatus()
                             emptyTexture = 'chest'
                         end
                         getglobal(frame:GetName() .. 'ItemIcon'):SetTexture('Interface\\Paperdoll\\ui-paperdoll-slot-' .. emptyTexture)
+                    elseif self.transmogStatusFromServer[InventorySlotId] == Transmog.UNKNOWN_MOG_ID then
+                        AddButtonOnEnterTooltipFashion(frame, eqItemLink, "(Transmogged)", true)
+                        local gossipIcon = self.transmogGossipIcon and self.transmogGossipIcon[InventorySlotId]
+                        getglobal(frame:GetName() .. 'ItemIcon'):SetTexture(gossipIcon or "Interface\\Icons\\INV_Misc_QuestionMark")
                     else
                         AddButtonOnEnterTooltipFashion(frame, eqItemLink, self.equippedTransmogs[itemName], true)
 
                         local _, _, _, _, _, _, _, _, _, TransmogTex = GetItemInfo(self.transmogStatusFromServer[InventorySlotId])
+                        if not TransmogTex then
+                            TransmogTex = self.transmogGossipIcon and self.transmogGossipIcon[InventorySlotId]
+                        end
 
                         getglobal(frame:GetName() .. 'ItemIcon'):SetTexture(TransmogTex)
                     end
@@ -117,28 +130,172 @@ function Transmog:transmogStatus()
     self:calculateCost()
 end
 
--- Sends all pending transmog changes to the server.
+function Transmog:ChromieCostText(copper)
+    if not copper or copper <= 0 then
+        return "free"
+    end
+    local gold = math.floor(copper / 10000)
+    local silver = math.floor((copper - gold * 10000) / 100)
+    local cop = copper - gold * 10000 - silver * 100
+    local text = ""
+    if gold > 0 then
+        text = gold .. " gold"
+    end
+    if silver > 0 then
+        if text ~= "" then
+            text = text .. " "
+        end
+        text = text .. silver .. " silver"
+    end
+    if cop > 0 and gold == 0 then
+        if text ~= "" then
+            text = text .. " "
+        end
+        text = text .. cop .. " copper"
+    end
+    if text == "" then
+        return "free"
+    end
+    return text
+end
+
+function Transmog:ChromieEnsureApplyProgressFrame()
+    if self.applyProgressFrame then
+        return self.applyProgressFrame
+    end
+    local f = CreateFrame("Frame", "ChromieTransmogApplyProgress", UIParent)
+    f:SetWidth(340)
+    f:SetHeight(96)
+    f:SetPoint("TOP", UIParent, "TOP", 0, -120)
+    f:SetFrameStrata("DIALOG")
+    f:SetMovable(true)
+    f:EnableMouse(false)
+    f:SetBackdrop({
+        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+        tile = true,
+        tileSize = 32,
+        edgeSize = 32,
+        insets = { left = 11, right = 12, top = 12, bottom = 11 },
+    })
+
+    local text = f:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    text:SetPoint("TOP", 0, -18)
+    text:SetWidth(300)
+    text:SetJustifyH("CENTER")
+    f.text = text
+
+    local bar = CreateFrame("StatusBar", "ChromieTransmogApplyProgressBar", f)
+    bar:SetWidth(268)
+    bar:SetHeight(16)
+    bar:SetPoint("BOTTOM", 0, 20)
+    bar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
+    bar:SetStatusBarColor(1, 0.82, 0.1)
+    bar:SetMinMaxValues(0, 1)
+    bar:SetValue(0)
+    local bg = bar:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints()
+    bg:SetTexture("Interface\\TargetingFrame\\UI-StatusBar")
+    bg:SetVertexColor(0.2, 0.2, 0.2, 0.9)
+    local barText = bar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    barText:SetPoint("CENTER", 0, 0)
+    f.bar = bar
+    f.barText = barText
+    f:Hide()
+    self.applyProgressFrame = f
+    return f
+end
+
+function Transmog:ChromieHideApplyProgress()
+    if self.applyProgressFrame then
+        self.applyProgressFrame:Hide()
+    end
+end
+
+function Transmog:ChromieAbortMultiApply()
+    self.chromieMultiActive = nil
+    self.chromieMultiTotal = nil
+    self.chromieMultiDone = nil
+    self.chromieWaitingForNpc = nil
+    self:ChromieHideApplyProgress()
+end
+
+function Transmog:ChromieUpdateApplyProgress(applying)
+    if not self.chromieMultiActive then
+        self:ChromieHideApplyProgress()
+        return
+    end
+    local f = self:ChromieEnsureApplyProgressFrame()
+    local total = self.chromieMultiTotal or 1
+    local done = self.chromieMultiDone or 0
+    if done > total then
+        done = total
+    end
+    local remain = total - done
+    f.bar:SetMinMaxValues(0, total)
+    f.bar:SetValue(done)
+    f.barText:SetText(done .. " / " .. total)
+    if remain <= 0 then
+        f.text:SetText("All queued transmogs applied.")
+        f:Show()
+        return
+    end
+    if applying then
+        f.text:SetText("Applying " .. (done + 1) .. " of " .. total .. "...")
+    else
+        local clicks = "click"
+        if remain ~= 1 then
+            clicks = "clicks"
+        end
+        f.text:SetText("Right-click Warpweaver to continue.\n" .. remain .. " more " .. clicks .. " needed.")
+    end
+    f:Show()
+end
+
+function Transmog:ChromieBeginQueuedApply()
+    local slot, item = self:ChromieNextPendingApply()
+    if not slot then
+        return
+    end
+    local pending = select(1, self:ChromiePendingCost())
+    if pending > 1 or self.chromieMultiActive then
+        if not self.chromieMultiActive then
+            self.chromieMultiActive = true
+            self.chromieMultiTotal = pending
+            self.chromieMultiDone = 0
+        end
+        self:ChromieUpdateApplyProgress(true)
+    end
+    self.pendingApplyCount = 1
+    self:ChromieStartApply(slot, item)
+end
+
+StaticPopupDialogs["CHROMIE_TRANSMOG_APPLY_CONFIRM"] = {
+    text = "%s",
+    button1 = TEXT(YES),
+    button2 = TEXT(NO),
+    OnAccept = function()
+        Transmog:ChromieBeginQueuedApply()
+    end,
+    timeout = 0,
+    whileDead = 1,
+    hideOnEscape = 1,
+    showAlert = 1,
+}
+
+-- Sends pending transmog changes through ChromieCraft gossip/vendor.
 function Apply_OnClick()
-
-    local pending = 0
-    for InventorySlotId, itemID in pairs(Transmog.transmogStatusToServer) do
-        if Transmog.transmogStatusFromServer[InventorySlotId] ~= itemID then
-            pending = pending + 1
-        end
+    local pending, copper = Transmog:ChromiePendingCost()
+    if pending <= 0 then
+        return
     end
-    Transmog.pendingApplyCount = pending
-
-    TransmogFrameApplyButton:Disable()
-
-    for InventorySlotId, itemID in pairs(Transmog.transmogStatusToServer) do
-        if Transmog.transmogStatusFromServer[InventorySlotId] ~= itemID then
-            if itemID ~= 0 then
-                Transmog:aSend("Apply:" .. (InventorySlotId - 1) .. ":" .. itemID)
-            else
-                Transmog:aSend("Remove:" .. (InventorySlotId - 1))
-            end
-        end
+    if pending == 1 then
+        Transmog:ChromieBeginQueuedApply()
+        return
     end
+    local costText = Transmog:ChromieCostText(copper)
+    local msg = pending .. " transmogs queued. Estimated cost: " .. costText .. ".\nWarpweaver applies one slot per click. Continue?"
+    StaticPopup_Show("CHROMIE_TRANSMOG_APPLY_CONFIRM", msg)
 end
 
 -- Handles the server response after applying transmog changes.
@@ -163,7 +320,7 @@ function Transmog:ApplyTransmogResult(success, data)
         Transmog:RefreshPendingGlows()
         Transmog.pendingApplyCount = Transmog.pendingApplyCount - 1
         if Transmog.pendingApplyCount <= 0 then
-			PlaySoundFile("Interface\\AddOns\\Transmog\\assets\\ui_transmogrify_apply.ogg", "Dialog");
+			PlaySoundFile("Interface\\AddOns\\ChromieTransmog\\assets\\ui_transmogrify_apply.ogg", "Dialog");
 			Transmog:transmogStatus()
 		end
 	end

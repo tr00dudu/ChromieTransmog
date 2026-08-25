@@ -1,12 +1,12 @@
-local Transmog = _G.Transmog
-local TransmogFrame_Find = string.find
-local TransmogFrame_ToNumber = tonumber
+local Transmog = _G.ChromieTransmog
+local ChromieTransmogFrame_Find = string.find
+local ChromieTransmogFrame_ToNumber = tonumber
 
 -- Checks whether the player's currently equipped items differ from last known state.
 function Transmog:EquippedItemsChanged()
     for _, InventorySlotId in pairs(self.inventorySlots) do
         if GetInventoryItemLink('player', InventorySlotId) then
-            local _, _, eqItemLink = TransmogFrame_Find(GetInventoryItemLink('player', InventorySlotId), "(item:%d+:%d+:%d+:%d+)");
+            local _, _, eqItemLink = ChromieTransmogFrame_Find(GetInventoryItemLink('player', InventorySlotId), "(item:%d+:%d+:%d+:%d+)");
             if self.equippedItems[InventorySlotId] ~= self:IDFromLink(eqItemLink) then
                 return true
             end
@@ -26,7 +26,7 @@ end
 
 -- Pre-caches all items referenced in saved outfits.
 function Transmog:CacheOutfitsItems()
-    for _, data in pairs(transmogOutfits) do
+    for _, data in pairs(ChromieTransmogOutfits) do
         for _, itemId in data do
             self:cacheItem(itemId)
         end
@@ -45,17 +45,17 @@ function Transmog:cacheItem(linkOrID)
         return
     end
 
-    if TransmogFrame_ToNumber(linkOrID) then
+    if ChromieTransmogFrame_ToNumber(linkOrID) then
         if GetItemInfo(linkOrID) then
             return true
         else
             local item = "item:" .. linkOrID .. ":0:0:0"
-            local _, _, itemLink = TransmogFrame_Find(item, "(item:%d+:%d+:%d+:%d+)");
+            local _, _, itemLink = ChromieTransmogFrame_Find(item, "(item:%d+:%d+:%d+:%d+)");
             linkOrID = itemLink
         end
     else
-        if TransmogFrame_Find(linkOrID, "|", 1, true) then
-            local _, _, itemLink = TransmogFrame_Find(linkOrID, "(item:%d+:%d+:%d+:%d+)");
+        if ChromieTransmogFrame_Find(linkOrID, "|", 1, true) then
+            local _, _, itemLink = ChromieTransmogFrame_Find(linkOrID, "(item:%d+:%d+:%d+:%d+)");
             linkOrID = itemLink
             if GetItemInfo(self:IDFromLink(linkOrID)) then
                 return true
@@ -64,5 +64,4 @@ function Transmog:cacheItem(linkOrID)
     end
 
     GameTooltip:SetHyperlink(linkOrID)
-
 end

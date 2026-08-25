@@ -1,20 +1,20 @@
-local Transmog = _G.Transmog
-local TransmogFrame_Find = string.find
-local TransmogFrame_ToNumber = tonumber
+local Transmog = _G.ChromieTransmog
+local ChromieTransmogFrame_Find = string.find
+local ChromieTransmogFrame_ToNumber = tonumber
 
 -- Updates the collection progress bar with collected count.
 function Transmog:setProgressBar(collected, possible)
-	TransmogFrameCollectedCollectedStatus:SetText("Collected: " .. collected)
+	ChromieTransmogFrameCollectedCollectedStatus:SetText("Collected: " .. collected)
 
 	local fillBarWidth = 0;
-    TransmogFrameCollectedFillBar:SetPoint("TOPRIGHT", TransmogFrameCollected, "TOPLEFT", fillBarWidth, 0);
-    TransmogFrameCollectedFillBar:Show();
+    ChromieTransmogFrameCollectedFillBar:SetPoint("TOPRIGHT", ChromieTransmogFrameCollected, "TOPLEFT", fillBarWidth, 0);
+    ChromieTransmogFrameCollectedFillBar:Show();
 
-    TransmogFrameCollected:SetStatusBarColor(0.0, 0.0, 0.0, 0.5);
-    TransmogFrameCollectedBackground:SetVertexColor(0.0, 0.0, 0.0, 0.5);
-    TransmogFrameCollectedFillBar:SetVertexColor(0.0, 1.0, 0.0, 0.5);
+    ChromieTransmogFrameCollected:SetStatusBarColor(0.0, 0.0, 0.0, 0.5);
+    ChromieTransmogFrameCollectedBackground:SetVertexColor(0.0, 0.0, 0.0, 0.5);
+    ChromieTransmogFrameCollectedFillBar:SetVertexColor(0.0, 1.0, 0.0, 0.5);
 
-    TransmogFrameCollected:Show()
+    ChromieTransmogFrameCollected:Show()
 end
 
 Transmog.availableTransmogsCacheDelay = CreateFrame("Frame")
@@ -35,6 +35,9 @@ Transmog.availableTransmogsCacheDelay:SetScript("OnUpdate", function()
 
         twfdebug("delay cache: " .. Transmog.availableTransmogsCacheDelay.InventorySlotId)
         Transmog:prepareAvailableTransmogs(Transmog.availableTransmogsCacheDelay.InventorySlotId, Transmog.availableTransmogsCacheDelay.ItemClass)
+        if Transmog.currentTransmogSlot == Transmog.availableTransmogsCacheDelay.InventorySlotId then
+            Transmog:renderAvailableTransmogs(Transmog.availableTransmogsCacheDelay.InventorySlotId, Transmog.availableTransmogsCacheDelay.ItemClass)
+        end
         Transmog.availableTransmogsCacheDelay:Hide()
     end
 end)
@@ -51,13 +54,13 @@ function Transmog:prepareAvailableTransmogs(slot, itemClass)
     self.availableTransmogItems[slot][itemClass] = {}
 
     for i, itemID in ipairs(self.transmogDataFromServer[slot][itemClass]) do
-        itemID = TransmogFrame_ToNumber(itemID)
+        itemID = ChromieTransmogFrame_ToNumber(itemID)
         local name, link, quality, level, min_level, class, subclass, _, inv_type, tex = GetItemInfo(itemID)
 
 		local eqItemLink = nil
 		local inventoryItemLink = GetInventoryItemLink('player', slot)
 		if inventoryItemLink then
-			local _, _, eqItemLink2 = TransmogFrame_Find(inventoryItemLink, "(item:%d+:%d+:%d+:%d+)");
+			local _, _, eqItemLink2 = ChromieTransmogFrame_Find(inventoryItemLink, "(item:%d+:%d+:%d+:%d+)");
 			eqItemLink = eqItemLink2;
 		end
 
@@ -123,7 +126,10 @@ function Transmog:renderAvailableTransmogs(slot, itemClass)
 
 	self:setProgressBar(self:tableSize(self.transmogDataFromServer[slot][itemClass]), self.numTransmogs[slot][itemClass])
     if self:tableSize(self.transmogDataFromServer[slot][itemClass]) == 0 then
-        TransmogFrameNoTransmogs:Show()
+        ChromieTransmogFrameNoTransmogs:SetText("You have yet to uncover any kind of appearance for this item. \nThe appearance will unlock after you equip the item.")
+        ChromieTransmogFrameNoTransmogs:Show()
+    else
+        ChromieTransmogFrameNoTransmogs:Hide()
     end
 
     local index = 0
@@ -136,10 +142,10 @@ function Transmog:renderAvailableTransmogs(slot, itemClass)
         if index >= (self.currentPage - 1) * self.ipp and index < self.currentPage * self.ipp then
 
             if not self.ItemButtons[itemIndex] then
-                self.ItemButtons[itemIndex] = CreateFrame('Frame', 'TransmogLook' .. itemIndex, TransmogFrame, 'TransmogFrameLookTemplate')
+                self.ItemButtons[itemIndex] = CreateFrame('Frame', 'TransmogLook' .. itemIndex, ChromieTransmogFrame, 'ChromieTransmogFrameLookTemplate')
             end
 
-            self.ItemButtons[itemIndex]:SetPoint("TOPLEFT", TransmogFrame, "TOPLEFT", 263 + col * 90, -105 - 120 * row)
+            self.ItemButtons[itemIndex]:SetPoint("TOPLEFT", ChromieTransmogFrame, "TOPLEFT", 263 + col * 90, -105 - 120 * row)
 
             self.ItemButtons[itemIndex].name = item.name
             self.ItemButtons[itemIndex].id = item.id
@@ -149,9 +155,9 @@ function Transmog:renderAvailableTransmogs(slot, itemClass)
             getglobal('TransmogLook' .. itemIndex .. 'ButtonCheck'):Hide()
 
             if item.id == self.transmogStatusToServer[slot] then
-                getglobal('TransmogLook' .. itemIndex .. 'Button'):SetNormalTexture('Interface\\AddOns\\Transmog\\assets\\item_bg_selected')
+                getglobal('TransmogLook' .. itemIndex .. 'Button'):SetNormalTexture('Interface\\AddOns\\ChromieTransmog\\assets\\item_bg_selected')
             else
-                getglobal('TransmogLook' .. itemIndex .. 'Button'):SetNormalTexture('Interface\\AddOns\\Transmog\\assets\\item_bg_normal')
+                getglobal('TransmogLook' .. itemIndex .. 'Button'):SetNormalTexture('Interface\\AddOns\\ChromieTransmog\\assets\\item_bg_normal')
             end
 
             local _, _, _, color = GetItemQualityColor(item.quality)
@@ -361,7 +367,7 @@ function Transmog:renderAvailableTransmogs(slot, itemClass)
             model:Undress()
 
             if self.currentTransmogSlot == self.inventorySlots['SecondaryHandSlot'] then
-                TransmogFramePlayerModel:TryOn(self.equippedItems[self.inventorySlots['MainHandSlot']])
+                ChromieTransmogFramePlayerModel:TryOn(self.equippedItems[self.inventorySlots['MainHandSlot']])
             end
 
             if item.id ~= Transmog.HIDDEN_ITEM_ID then
@@ -382,18 +388,18 @@ function Transmog:renderAvailableTransmogs(slot, itemClass)
 
     self.totalPages = self:ceil(self:tableSize(self.availableTransmogItems[slot][itemClass]) / self.ipp)
 
-    TransmogFramePageText:SetText("Page " .. self.currentPage .. "/" .. self.totalPages)
+    ChromieTransmogFramePageText:SetText("Page " .. self.currentPage .. "/" .. self.totalPages)
 
     if self.currentPage == 1 then
-        TransmogFrameLeftArrow:Disable()
+        ChromieTransmogFrameLeftArrow:Disable()
     else
-        TransmogFrameLeftArrow:Enable()
+        ChromieTransmogFrameLeftArrow:Enable()
     end
 
     if self.currentPage == self.totalPages or self:tableSize(self.availableTransmogItems[slot][itemClass]) < self.ipp then
-        TransmogFrameRightArrow:Disable()
+        ChromieTransmogFrameRightArrow:Disable()
     else
-        TransmogFrameRightArrow:Enable()
+        ChromieTransmogFrameRightArrow:Enable()
     end
 
     if self.totalPages > 1 then

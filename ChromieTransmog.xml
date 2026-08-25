@@ -1,7 +1,7 @@
 <Ui xmlns="http://www.blizzard.com/wow/ui/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.blizzard.com/wow/ui/..\FrameXML\UI.xsd">
     
     <GameTooltip name="FashionTooltip" inherits="GameTooltipTemplate" parent="UIParent" hidden="true"/>
-    <Frame name="TransmogFrameLookTemplate" virtual="true" framestrata="HIGH">
+    <Frame name="ChromieTransmogFrameLookTemplate" virtual="true" framestrata="HIGH">
         <Size>
             <AbsDimension x="90" y="110"/>
         </Size>
@@ -14,7 +14,7 @@
         </Anchors>
         <Frames>
             <Button name="$parentButton" inherits="UIPanelButtonTemplate" text="">
-                <NormalTexture file="Interface\AddOns\Transmog\assets\item_bg_normal">
+                <NormalTexture file="Interface\AddOns\ChromieTransmog\assets\item_bg_normal">
                     <Size>
                         <AbsDimension x="128" y="128"/>
                     </Size>
@@ -26,7 +26,7 @@
                         </Anchor>
                     </Anchors>
                 </NormalTexture>
-                <PushedTexture file="Interface\AddOns\Transmog\assets\item_bg_selected">
+                <PushedTexture file="Interface\AddOns\ChromieTransmog\assets\item_bg_selected">
                     <Size>
                         <AbsDimension x="128" y="128"/>
                     </Size>
@@ -38,7 +38,7 @@
                         </Anchor>
                     </Anchors>
                 </PushedTexture>
-                <HighlightTexture file="Interface\AddOns\Transmog\assets\item_bg_highlight" alphaMode="ADD">
+                <HighlightTexture file="Interface\AddOns\ChromieTransmog\assets\item_bg_highlight" alphaMode="ADD">
                     <Size>
                         <AbsDimension x="128" y="128"/>
                     </Size>
@@ -62,7 +62,7 @@
                 </Anchors>
                 <Layers>
                     <Layer level="OVERLAY">
-                        <Texture name="$parentRevert" hidden="true" file="Interface\AddOns\Transmog\assets\revert">
+                        <Texture name="$parentRevert" hidden="true" file="Interface\AddOns\ChromieTransmog\assets\revert">
                             <Size>
                                 <AbsDimension x="16" y="16"/>
                             </Size>
@@ -74,7 +74,7 @@
                                 </Anchor>
                             </Anchors>
                         </Texture>
-                        <Texture name="$parentCheck" hidden="true" file="Interface\AddOns\Transmog\assets\check">
+                        <Texture name="$parentCheck" hidden="true" file="Interface\AddOns\ChromieTransmog\assets\check">
                             <Size>
                                 <AbsDimension x="16" y="16"/>
                             </Size>
@@ -279,7 +279,7 @@
                 </Texture>
             </Layer>
             <Layer level="ARTWORK">
-                <Texture name="$parentBorder" file="Interface\AddOns\Transmog\assets\transmog_border">
+                <Texture name="$parentBorder" file="Interface\AddOns\ChromieTransmog\assets\transmog_border">
                     <Size>
                         <AbsDimension x="48" y="48"/>
                     </Size>
@@ -293,7 +293,7 @@
                 </Texture>
             </Layer>
             <Layer level="OVERLAY">
-                <Texture name="$parentNoEquip" hidden="true" file="Interface\AddOns\Transmog\assets\no_equip">
+                <Texture name="$parentNoEquip" hidden="true" file="Interface\AddOns\ChromieTransmog\assets\no_equip">
                     <Size>
                         <AbsDimension x="26" y="26"/>
                     </Size>
@@ -305,7 +305,7 @@
                         </Anchor>
                     </Anchors>
                 </Texture>
-                <Texture name="$parentBorderHi" hidden="true" file="Interface\AddOns\Transmog\assets\border_1">
+                <Texture name="$parentBorderHi" hidden="true" file="Interface\AddOns\ChromieTransmog\assets\border_1">
                     <Size>
                         <AbsDimension x="48" y="48"/>
                     </Size>
@@ -317,7 +317,7 @@
                         </Anchor>
                     </Anchors>
                 </Texture>
-                <Texture name="$parentBorderFull" hidden="true" file="Interface\AddOns\Transmog\assets\border_full">
+                <Texture name="$parentBorderFull" hidden="true" file="Interface\AddOns\ChromieTransmog\assets\border_full">
                     <Size>
                         <AbsDimension x="48" y="48"/>
                     </Size>
@@ -329,7 +329,7 @@
                         </Anchor>
                     </Anchors>
                 </Texture>
-                <Texture name="$parentBorderSelected" hidden="true" file="Interface\AddOns\Transmog\assets\border_2">
+                <Texture name="$parentBorderSelected" hidden="true" file="Interface\AddOns\ChromieTransmog\assets\border_2">
                     <Size>
                         <AbsDimension x="48" y="48"/>
                     </Size>
@@ -343,7 +343,7 @@
                 </Texture>
             </Layer>
             <Layer level="HIGHLIGHT">
-                <Texture name="$parentRevert" hidden="true" file="Interface\AddOns\Transmog\assets\revert">
+                <Texture name="$parentRevert" hidden="true" file="Interface\AddOns\ChromieTransmog\assets\revert">
                     <Size>
                         <AbsDimension x="16" y="16"/>
                     </Size>
@@ -355,7 +355,7 @@
                         </Anchor>
                     </Anchors>
                 </Texture>
-                <Texture name="$parentBorderHighlight" file="Interface\AddOns\Transmog\assets\border_3">
+                <Texture name="$parentBorderHighlight" file="Interface\AddOns\ChromieTransmog\assets\border_3">
                     <Size>
                         <AbsDimension x="48" y="48"/>
                     </Size>
@@ -494,7 +494,7 @@
             </OnDragStop>
         </Scripts>
     </Frame>
-    <Frame name="TransmogFrame" hidden="true" toplevel="true" parent="UIParent" movable="true" enableMouse="true">
+    <Frame name="ChromieTransmogFrame" hidden="true" toplevel="true" parent="UIParent" movable="true" enableMouse="true">
         <Size>
             <AbsDimension x="750" y="506"/>
         </Size>
@@ -521,7 +521,7 @@
                 </Texture>
             </Layer>
             <Layer level="BORDER">
-                <Texture name="$parentBackground1" file="Interface\AddOns\Transmog\assets\ui1">
+                <Texture name="$parentBackground1" file="Interface\AddOns\ChromieTransmog\assets\ui1">
                     <Size>
                         <AbsDimension x="512" y="512"/>
                     </Size>
@@ -533,7 +533,7 @@
                         </Anchor>
                     </Anchors>
                 </Texture>
-                <Texture name="$parentBackground2" file="Interface\AddOns\Transmog\assets\ui2">
+                <Texture name="$parentBackground2" file="Interface\AddOns\ChromieTransmog\assets\ui2">
                     <Size>
                         <AbsDimension x="512" y="512"/>
                     </Size>
@@ -559,7 +559,7 @@
                         </Anchor>
                     </Anchors>
                 </Texture>
-                <Texture name="$parentSplash" file="Interface\AddOns\Transmog\assets\splash">
+                <Texture name="$parentSplash" file="Interface\AddOns\ChromieTransmog\assets\splash">
                     <Size>
                         <AbsDimension x="512" y="512"/>
                     </Size>
@@ -709,7 +709,7 @@
                 <HighlightTexture file="Interface\Buttons\CancelButton-Highlight" alphaMode="ADD"/>
             </Button>
             <Button name="$parentRevert" hidden="false" text="" topLevel="true">
-                <NormalTexture name="$parentNormalTexture" file="Interface\AddOns\Transmog\assets\revert">
+                <NormalTexture name="$parentNormalTexture" file="Interface\AddOns\ChromieTransmog\assets\revert">
                     <Size>
                         <AbsDimension x="24" y="24"/>
                     </Size>
@@ -721,7 +721,7 @@
                         </Anchor>
                     </Anchors>
                 </NormalTexture>
-                <HighlightTexture name="$parentNormalTexture" file="Interface\AddOns\Transmog\assets\revert"
+                <HighlightTexture name="$parentNormalTexture" file="Interface\AddOns\ChromieTransmog\assets\revert"
                                   alphaMode="ADD">
                     <Size>
                         <AbsDimension x="24" y="24"/>
@@ -734,7 +734,7 @@
                         </Anchor>
                     </Anchors>
                 </HighlightTexture>
-                <PushedTexture name="$parentNormalTexture" file="Interface\AddOns\Transmog\assets\revert"
+                <PushedTexture name="$parentNormalTexture" file="Interface\AddOns\ChromieTransmog\assets\revert"
                                alphaMode="ADD">
                     <Size>
                         <AbsDimension x="24" y="24"/>
@@ -764,7 +764,7 @@
                 </Scripts>
             </Button>
             <Button name="$parentItemsButton" inherits="UIPanelButtonTemplate" text="">
-                <NormalTexture name="$parentNormalTexture" file="Interface\AddOns\Transmog\assets\tab_active">
+                <NormalTexture name="$parentNormalTexture" file="Interface\AddOns\ChromieTransmog\assets\tab_active">
                     <Size>
                         <AbsDimension x="128" y="32"/>
                     </Size>
@@ -776,7 +776,7 @@
                         </Anchor>
                     </Anchors>
                 </NormalTexture>
-                <PushedTexture name="$parentPushedTexture" file="Interface\AddOns\Transmog\assets\tab_active">
+                <PushedTexture name="$parentPushedTexture" file="Interface\AddOns\ChromieTransmog\assets\tab_active">
                     <Size>
                         <AbsDimension x="128" y="32"/>
                     </Size>
@@ -1034,7 +1034,7 @@
             </OnLoad>
             <OnShow>
                 PlaySound("igCharacterInfoOpen");
-                TransmogFrame_OnShow();
+                ChromieTransmogFrame_OnShow();
             </OnShow>
             <OnHide>
                 Transmog_OnHide()

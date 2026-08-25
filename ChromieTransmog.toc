@@ -1,7 +1,7 @@
 ## Interface: 30300
-## Title: Transmog
-## Notes: Transmog UI, ported from CMaNGOS to AzerothCore mod-transmog-plus
-## SavedVariablesPerCharacter: transmogOutfits
+## Title: ChromieTransmog
+## Notes: ChromieCraft transmog UI. Modified from Stefan2102/mod-transmog-plus to work with azerothcore/mod-transmog (gossip/vendor), not the plus addon protocol.
+## SavedVariablesPerCharacter: ChromieTransmogOutfits
 core\bootstrap.lua
 core\state.lua
 core\constants.lua
@@ -10,6 +10,9 @@ core\helpers.lua
 features\item_cache.lua
 features\collection_tooltips.lua
 features\addon_protocol.lua
+features\chromie_backend.lua
+features\paperdoll_icons.lua
+features\probe_log.lua
 features\apply_transmog.lua
 features\outfits.lua
 features\slash_commands.lua
@@ -20,4 +23,4 @@ ui\costs.lua
 ui\tooltips.lua
 ui\animations.lua
 core\event_handlers.lua
-transmog.xml
+ChromieTransmog.xml

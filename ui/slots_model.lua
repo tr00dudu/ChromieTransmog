@@ -1,6 +1,6 @@
-local Transmog = _G.Transmog
-local TransmogFrame_Find = string.find
-local TransmogFrame_ToNumber = tonumber
+local Transmog = _G.ChromieTransmog
+local ChromieTransmogFrame_Find = string.find
+local ChromieTransmogFrame_ToNumber = tonumber
 
 -- Maps an inventory type string to the corresponding slot frame.
 function Transmog:frameFromInvType(invType, clientSlot)
@@ -57,19 +57,143 @@ function Transmog:frameFromInvType(invType, clientSlot)
     return nil
 end
 
--- Rebuilds the character preview model from scratch, skipping the Hidden
--- sentinel. DressUpModel has no per-slot TryOff, so we must Undress/re-TryOn.
-function Transmog:RefreshPreviewModel()
-    TransmogFramePlayerModel:Undress()
-    for _, InventorySlotId in pairs(self.inventorySlots) do
-        local effective = self.transmogStatusToServer[InventorySlotId]
-        if not effective or effective == 0 then
-            effective = self.equippedItems[InventorySlotId]
-        end
-        if effective and effective ~= 0 and effective ~= Transmog.HIDDEN_ITEM_ID then
-            TransmogFramePlayerModel:TryOn(effective)
+function Transmog:PreviewShowsHelm()
+    if ShowingHelm then
+        return not not ShowingHelm()
+    end
+    return GetCVar("showHelm") == "1"
+end
+
+function Transmog:PreviewShowsCloak()
+    if ShowingCloak then
+        return not not ShowingCloak()
+    end
+    return GetCVar("showCloak") == "1"
+end
+
+function Transmog:PreviewTryOn(itemId, slot)
+    if not itemId or itemId == 0 or itemId == self.HIDDEN_ITEM_ID or itemId == self.UNKNOWN_MOG_ID then
+        return
+    end
+    if slot == 1 and not self:PreviewShowsHelm() then
+        return
+    end
+    if slot == 15 and not self:PreviewShowsCloak() then
+        return
+    end
+    ChromieTransmogFramePlayerModel:TryOn(itemId)
+end
+
+-- C methods often are not visible as a Lua field; always pcall.
+function Transmog:PreviewHideSlot(model, slot)
+    if not model or not slot then
+        return false
+    end
+    local ok = pcall(function()
+        model:UndressSlot(slot)
+    end)
+    return ok
+end
+
+function Transmog:PreviewVisibleItem(slot)
+    local want = self.transmogStatusToServer[slot]
+    local have = self.transmogStatusFromServer[slot]
+    if want == self.HIDDEN_ITEM_ID then
+        return nil
+    end
+    if want and want > 1 then
+        return want
+    end
+    if have and have > 1 then
+        return have
+    end
+    return self.equippedItems[slot]
+end
+
+function Transmog:PreviewDressVisibleSlots(hideSlots)
+    local extra = { 4, 19 }
+    local i
+    for i = 1, 2 do
+        local link = GetInventoryItemLink("player", extra[i])
+        local id = link and self:IDFromLink(link)
+        if id then
+            ChromieTransmogFramePlayerModel:TryOn(id)
         end
     end
+    local _, slot
+    for _, slot in pairs(self.inventorySlots) do
+        if not (hideSlots and hideSlots[slot]) then
+            self:PreviewTryOn(self:PreviewVisibleItem(slot), slot)
+        end
+    end
+end
+
+function Transmog:PreviewApplyPending()
+    local model = ChromieTransmogFramePlayerModel
+    if not model then
+        return
+    end
+
+    local hideSlots = {}
+    local _, slot
+    for _, slot in pairs(self.inventorySlots) do
+        local want = self.transmogStatusToServer[slot]
+        if want == self.HIDDEN_ITEM_ID then
+            hideSlots[slot] = true
+        end
+    end
+
+    local hid = false
+    for slot in pairs(hideSlots) do
+        if self:PreviewHideSlot(model, slot) then
+            hid = true
+        end
+    end
+
+    if not hid then
+        model:Undress()
+        self:PreviewDressVisibleSlots(hideSlots)
+        return
+    end
+
+    for _, slot in pairs(self.inventorySlots) do
+        if not hideSlots[slot] then
+            local want = self.transmogStatusToServer[slot]
+            local have = self.transmogStatusFromServer[slot]
+            if want and have ~= want then
+                if want == 0 then
+                    self:PreviewTryOn(self.equippedItems[slot], slot)
+                else
+                    self:PreviewTryOn(want, slot)
+                end
+            end
+        end
+    end
+end
+
+-- SetUnit dresses asynchronously. UndressSlot in the same frame is discarded.
+function Transmog:PreviewScheduleApply()
+    if not self.previewApplyFrame then
+        local f = CreateFrame("Frame")
+        f:Hide()
+        f:SetScript("OnUpdate", function()
+            this.frames = (this.frames or 0) + 1
+            if this.frames < 2 then
+                return
+            end
+            this:Hide()
+            Transmog:PreviewApplyPending()
+        end)
+        self.previewApplyFrame = f
+    end
+    self.previewApplyFrame.frames = 0
+    self.previewApplyFrame:Hide()
+    self.previewApplyFrame:Show()
+end
+
+function Transmog:RefreshPreviewModel()
+    ChromieTransmogFramePlayerModel:SetUnit("player")
+    self:PreviewScheduleApply()
 end
 
 -- Previews a transmog appearance on the selected equipment slot.
@@ -108,7 +232,7 @@ function Transmog_Try(itemId, slotName, newReset)
 
         AddButtonOnEnterTooltipFashion(getglobal(slotName), GetInventoryItemLink('player', InventorySlotId))
 
-        local _, _, eqItemLink = TransmogFrame_Find(GetInventoryItemLink('player', InventorySlotId), "(item:%d+:%d+:%d+:%d+)");
+        local _, _, eqItemLink = ChromieTransmogFrame_Find(GetInventoryItemLink('player', InventorySlotId), "(item:%d+:%d+:%d+:%d+)");
         local eName = GetItemInfo(eqItemLink)
 
         Transmog.equippedTransmogs[eName] = nil
@@ -130,9 +254,9 @@ function Transmog_Try(itemId, slotName, newReset)
     Transmog:UpdateSlotGlow(Transmog.currentTransmogSlotName, Transmog.currentTransmogSlot)
 
     for itemIndex, data in ipairs(Transmog.ItemButtons) do
-        getglobal('TransmogLook' .. itemIndex .. 'Button'):SetNormalTexture('Interface\\AddOns\\Transmog\\assets\\item_bg_normal')
+        getglobal('TransmogLook' .. itemIndex .. 'Button'):SetNormalTexture('Interface\\AddOns\\ChromieTransmog\\assets\\item_bg_normal')
         if data.id == itemId then
-            getglobal('TransmogLook' .. itemIndex .. 'Button'):SetNormalTexture('Interface\\AddOns\\Transmog\\assets\\item_bg_selected')
+            getglobal('TransmogLook' .. itemIndex .. 'Button'):SetNormalTexture('Interface\\AddOns\\ChromieTransmog\\assets\\item_bg_selected')
         end
     end
 
@@ -168,16 +292,16 @@ end
 
 -- Hides the pagination arrow and page text controls.
 function Transmog:hidePagination()
-    TransmogFrameLeftArrow:Hide()
-    TransmogFrameRightArrow:Hide()
-    TransmogFramePageText:Hide()
+    ChromieTransmogFrameLeftArrow:Hide()
+    ChromieTransmogFrameRightArrow:Hide()
+    ChromieTransmogFramePageText:Hide()
 end
 
 -- Shows the pagination arrow and page text controls.
 function Transmog:showPagination()
-    TransmogFrameLeftArrow:Show()
-    TransmogFrameRightArrow:Show()
-    TransmogFramePageText:Show()
+    ChromieTransmogFrameLeftArrow:Show()
+    ChromieTransmogFrameRightArrow:Show()
+    ChromieTransmogFramePageText:Show()
 end
 
 -- Hides all transmog item buttons, optionally using the button's own Hide method.
@@ -194,7 +318,7 @@ end
 -- Resets all item button border textures to the normal state.
 function Transmog:hideItemBorders()
     for index, _ in ipairs(self.ItemButtons) do
-        getglobal('TransmogLook' .. index .. 'Button'):SetNormalTexture('Interface\\AddOns\\Transmog\\assets\\item_bg_normal')
+        getglobal('TransmogLook' .. index .. 'Button'):SetNormalTexture('Interface\\AddOns\\ChromieTransmog\\assets\\item_bg_normal')
 	end
 end
 
@@ -203,7 +327,7 @@ function selectTransmogSlot(InventorySlotId, slotName)
 
 	twfdebug("selectTransmogSlot slot: " .. InventorySlotId)
 
-    TransmogFrameNoTransmogs:Hide()
+    ChromieTransmogFrameNoTransmogs:Hide()
 
     if InventorySlotId == -1 then
         Transmog:hidePlayerItemsBorders()
@@ -211,9 +335,9 @@ function selectTransmogSlot(InventorySlotId, slotName)
         Transmog:hideItems(true)
         Transmog:hideItemBorders()
         Transmog:hidePagination()
-        TransmogFrameSplash:Show()
-        TransmogFrameInstructions:Show()
-        TransmogFrameCollected:Hide()
+        ChromieTransmogFrameSplash:Show()
+        ChromieTransmogFrameInstructions:Show()
+        ChromieTransmogFrameCollected:Hide()
         Transmog.currentTransmogSlotName = nil
         Transmog.currentTransmogSlot = nil
 		Transmog.currentTransmogItemClass = nil
@@ -224,8 +348,8 @@ function selectTransmogSlot(InventorySlotId, slotName)
         return false
     end
 
-    TransmogFrameSplash:Hide()
-    TransmogFrameInstructions:Hide()
+    ChromieTransmogFrameSplash:Hide()
+    ChromieTransmogFrameInstructions:Hide()
 
     Transmog.currentPage = 1
     Transmog.currentTransmogSlotName = slotName
@@ -236,7 +360,7 @@ function selectTransmogSlot(InventorySlotId, slotName)
         return
     end
 
-    local _, _, eqItemLink = TransmogFrame_Find(GetInventoryItemLink('player', Transmog.currentTransmogSlot), "(item:%d+:%d+:%d+:%d+)");
+    local _, _, eqItemLink = ChromieTransmogFrame_Find(GetInventoryItemLink('player', Transmog.currentTransmogSlot), "(item:%d+:%d+:%d+:%d+)");
     local itemName, _, _, _, _, itemClass, itemSubclass, _, invType = GetItemInfo(eqItemLink)
 
     local eqItemId = Transmog:IDFromLink(eqItemLink)
@@ -248,13 +372,13 @@ function selectTransmogSlot(InventorySlotId, slotName)
 
 	Transmog.currentTransmogItemClass = Transmog:ItemClassStrToNum(itemClass) + Transmog:ItemSubclassStrToNum(itemSubclass)
 
-    Transmog:renderAvailableTransmogs(Transmog.currentTransmogSlot, Transmog.currentTransmogItemClass)
+    Transmog:ChromieEnsureSlot(Transmog.currentTransmogSlot)
 end
 
 -- Initializes the character preview model with default rotation.
 function TransmogModel_OnLoad()
-    TransmogFramePlayerModel.rotation = 0.61;
-    TransmogFramePlayerModel:SetRotation(TransmogFramePlayerModel.rotation);
+    ChromieTransmogFramePlayerModel.rotation = 0.61;
+    ChromieTransmogFramePlayerModel:SetRotation(ChromieTransmogFramePlayerModel.rotation);
 end
 
 -- Navigates between pages of transmog options or outfit tabs.
@@ -278,14 +402,34 @@ function Transmog_ChangePage(dir)
 end
 
 -- Reverts all pending transmog edits, discarding un-applied changes.
+-- Does not send gossip or clear applied mogs on the character.
 function Transmog_revert()
-    for InventorySlotId, itemID in pairs(Transmog.transmogStatusFromServer) do
-        Transmog.transmogStatusToServer[InventorySlotId] = itemID
+    if Transmog.ChromieAbortMultiApply then
+        Transmog:ChromieAbortMultiApply()
     end
-    Transmog:HidePlayerItemsAnimation()
+    if Transmog.chromieJob == "apply" then
+        Transmog.chromieJob = "open"
+        Transmog.chromieApplyClicked = nil
+        Transmog.chromieApplySlot = nil
+        Transmog.chromieApplyItem = nil
+        Transmog.chromieWaitingForNpc = nil
+    end
 
+    local _, slot
+    for _, slot in pairs(Transmog.inventorySlots) do
+        Transmog.transmogStatusToServer[slot] = Transmog.transmogStatusFromServer[slot] or 0
+    end
+
+    Transmog:HidePlayerItemsAnimation()
+    if Transmog.RefreshPendingGlows then
+        Transmog:RefreshPendingGlows()
+    end
     Transmog:Reset()
     Transmog:calculateCost(0)
+end
+
+function Transmog_resetAllSlots()
+    Transmog_revert()
 end
 
 -- Switches between the items and outfits tabs.
@@ -295,9 +439,9 @@ function Transmog_switchTab(to)
 
     Transmog.tab = to
     if to == 'items' then
-        TransmogFrameItemsButton:SetNormalTexture('Interface\\AddOns\\Transmog\\assets\\tab_active')
-        TransmogFrameItemsButton:SetPushedTexture('Interface\\AddOns\\Transmog\\assets\\tab_active')
-        TransmogFrameItemsButtonText:SetText(HIGHLIGHT_FONT_COLOR_CODE .. 'Items')
+        ChromieTransmogFrameItemsButton:SetNormalTexture('Interface\\AddOns\\ChromieTransmog\\assets\\tab_active')
+        ChromieTransmogFrameItemsButton:SetPushedTexture('Interface\\AddOns\\ChromieTransmog\\assets\\tab_active')
+        ChromieTransmogFrameItemsButtonText:SetText(HIGHLIGHT_FONT_COLOR_CODE .. 'Items')
 
         if Transmog.currentTransmogSlot ~= nil then
             selectTransmogSlot(Transmog.currentTransmogSlot, Transmog.currentTransmogSlotName)

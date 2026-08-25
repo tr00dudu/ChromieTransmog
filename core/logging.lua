@@ -1,9 +1,9 @@
-local Transmog = _G.Transmog
+local Transmog = _G.ChromieTransmog
 local GAME_YELLOW = "|cffffd200"
 
 -- Prints a formatted error message to the default chat frame.
 function twferror(a)
-    DEFAULT_CHAT_FRAME:AddMessage('|cff69ccf0[TWFError]:|cffffffff ' .. a .. '. Please report.')
+    DEFAULT_CHAT_FRAME:AddMessage('|cff69ccf0[ChromieTransmog]|cffffffff ' .. a .. '. Please report.')
 end
 
 -- Prints a formatted message to the default chat frame.

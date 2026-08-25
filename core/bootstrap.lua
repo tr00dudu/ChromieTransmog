@@ -1,4 +1,6 @@
-_G.Transmog = CreateFrame("Frame")
-local Transmog = _G.Transmog
+_G.ChromieTransmog = CreateFrame("Frame")
+local Transmog = _G.ChromieTransmog
 
 Transmog.debug = false
+Transmog.overlayEnabled = true
+Transmog.logEnabled = false

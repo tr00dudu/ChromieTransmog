@@ -1,4 +1,4 @@
-local Transmog = _G.Transmog
+local Transmog = _G.ChromieTransmog
 local tonumber, hooksecurefunc = tonumber, hooksecurefunc
 
 local PREFIX = Transmog.prefix
@@ -43,12 +43,8 @@ end
 
 -- Ask the server only when this item has no cached result and no request is pending.
 local function requestStatus(itemId)
-    if not itemId or statusByItem[itemId] ~= nil or pendingByItem[itemId] then
-        return
-    end
-
-    pendingByItem[itemId] = true
-    SendAddonMessage(PREFIX, "GetCollectionStatus:" .. itemId, "WHISPER", UnitName("player"))
+    -- ChromieCraft does not expose collection status over addon messages.
+    return
 end
 
 -- Inspect a populated tooltip and apply a cached result or start a server lookup.

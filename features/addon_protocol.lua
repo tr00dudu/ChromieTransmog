@@ -1,11 +1,6 @@
-local Transmog = _G.Transmog
+local Transmog = _G.ChromieTransmog
 
--- Sends a transmog command to the server via the addon message channel.
+-- ChromieCraft has no plus addon protocol. Keep this as a no-op so leftover callers do not whisper the live realm.
 function Transmog:aSend(data)
-    if self.localCache[data] then
-        twfdebug("|cff69ccf0 not send " .. data .. " data cached")
-    else
-        SendAddonMessage(self.prefix, data, "WHISPER", UnitName("player"))
-        twfdebug("|cff69ccf0 send -> " .. data)
-    end
+    twfdebug("aSend skipped (ChromieCraft): " .. tostring(data))
 end

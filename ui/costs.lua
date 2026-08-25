@@ -1,4 +1,4 @@
-local Transmog = _G.Transmog
+local Transmog = _G.ChromieTransmog
 
 local currencyTextLayoutConfigured = false
 
@@ -7,13 +7,77 @@ local function ConfigureCurrencyTextLayout()
         return
     end
 
-    TransmogFrameCurrencyText:ClearAllPoints()
-    TransmogFrameCurrencyText:SetWidth(100)
-    TransmogFrameCurrencyText:SetHeight(14)
-    TransmogFrameCurrencyText:SetPoint("RIGHT", TransmogFrameApplyButton, "LEFT", -8, 0)
-    TransmogFrameCurrencyText:SetJustifyH("RIGHT")
+    ChromieTransmogFrameCurrencyText:ClearAllPoints()
+    ChromieTransmogFrameCurrencyText:SetWidth(180)
+    ChromieTransmogFrameCurrencyText:SetHeight(14)
+    ChromieTransmogFrameCurrencyText:SetPoint("RIGHT", ChromieTransmogFrameApplyButton, "LEFT", -8, 0)
+    ChromieTransmogFrameCurrencyText:SetJustifyH("RIGHT")
 
     currencyTextLayoutConfigured = true
+end
+
+-- Estimated ChromieCraft cost: hide and clear are free. A new appearance
+-- costs the equipped item's vendor price, with a 1g minimum.
+local MIN_MOG_COPPER = 10000
+
+function Transmog:ChromieSlotVendorPrice(slot)
+    local link = GetInventoryItemLink("player", slot)
+    if not link then
+        return 0
+    end
+    local price = select(11, GetItemInfo(link))
+    return tonumber(price) or 0
+end
+
+function Transmog:ChromieSlotMogCost(slot)
+    local price = self:ChromieSlotVendorPrice(slot)
+    if price < MIN_MOG_COPPER then
+        return MIN_MOG_COPPER
+    end
+    return price
+end
+
+function Transmog:ChromiePendingCost()
+    local pending = 0
+    local copper = 0
+    local paid = 0
+    local slotName, slot
+    for slotName, slot in pairs(self.inventorySlots) do
+        local want = self.transmogStatusToServer[slot]
+        local have = self.transmogStatusFromServer[slot]
+        if want ~= have and want ~= self.UNKNOWN_MOG_ID then
+            pending = pending + 1
+            if want and want ~= 0 and want ~= self.HIDDEN_ITEM_ID then
+                local price = self:ChromieSlotMogCost(slot)
+                copper = copper + price
+                paid = paid + 1
+            end
+        end
+    end
+    return pending, copper, paid
+end
+
+function Transmog:ChromieSlotNeedsApply(slot)
+    local have = self.transmogStatusFromServer[slot]
+    local want = self.transmogStatusToServer[slot]
+    if have == want or want == self.UNKNOWN_MOG_ID then
+        return false
+    end
+    return true
+end
+
+function Transmog:ChromieNextPendingApply()
+    local current = self.currentTransmogSlot
+    if current and self:ChromieSlotNeedsApply(current) then
+        return current, self.transmogStatusToServer[current]
+    end
+    local _, slot
+    for _, slot in pairs(self.inventorySlots) do
+        if self:ChromieSlotNeedsApply(slot) then
+            return slot, self.transmogStatusToServer[slot]
+        end
+    end
+    return nil
 end
 
 -- Sends a cost calculation request to the server when transmog changes are pending.
@@ -21,40 +85,49 @@ function Transmog:calculateCost(to)
 
 	twfdebug("Transmog:calculateCost")
 
-	local slots = ""
-    local transmogs = 0
-    local resets = 0
+    if to == 0 and not self.chromieMultiActive then
+        ChromieTransmogFrameApplyButton:Disable()
+        ChromieTransmogFrameApplyButton:SetText("Change any Items")
+        ChromieTransmogFrameCurrencyText:Hide()
+        return
+    end
 
-    for InventorySlotId, data in pairs(self.transmogStatusFromServer) do
-        if data ~= self.transmogStatusToServer[InventorySlotId] then
-            if self.transmogStatusToServer[InventorySlotId] ~= 0 then
-                transmogs = transmogs + 1
-				slots = slots .. InventorySlotId-1 .. ":" .. self.transmogStatusToServer[InventorySlotId] .. ","
-            else
-                resets = resets + 1
+    local pending, copper = self:ChromiePendingCost()
+    if self.chromieMultiActive and pending > 0 then
+        ChromieTransmogFrameApplyButton:Disable()
+        ChromieTransmogFrameApplyButton:SetText("Talk to Warpweaver")
+        if copper > 0 then
+            local canBuy = 1
+            if GetMoney() < copper then
+                canBuy = 0
             end
-        end
-    end
-
-    if to == 0 then
-        transmogs = 0
-        resets = 0
-    end
-
-    if transmogs == 0 then
-        if resets > 0 then
-            TransmogFrameApplyButton:Enable()
-            TransmogFrameApplyButton:SetText("Apply Reset")
+            self:updateCost(copper, canBuy)
+            ChromieTransmogFrameApplyButton:Disable()
+            ChromieTransmogFrameApplyButton:SetText("Talk to Warpweaver")
         else
-            TransmogFrameApplyButton:Disable()
-            TransmogFrameApplyButton:SetText("Change any Items")
+            ChromieTransmogFrameCurrencyText:Hide()
         end
-
-		TransmogFrameCurrencyText:Hide()
-    else
-		self:aSend("CalculateCost:"..slots)
-		TransmogFrameApplyButton:Disable()
+        return
     end
+    if pending == 0 then
+        ChromieTransmogFrameApplyButton:Disable()
+        ChromieTransmogFrameApplyButton:SetText("Change any Items")
+        ChromieTransmogFrameCurrencyText:Hide()
+        return
+    end
+
+    ChromieTransmogFrameApplyButton:SetText("Apply Transmog")
+    if copper <= 0 then
+        ChromieTransmogFrameApplyButton:Enable()
+        ChromieTransmogFrameCurrencyText:Hide()
+        return
+    end
+
+    local canBuy = 1
+    if GetMoney() < copper then
+        canBuy = 0
+    end
+    self:updateCost(copper, canBuy)
 end
 
 local function formatNumberWithCommas(amount)
@@ -82,16 +155,16 @@ function Transmog:updateCost(cost, canPurchase)
     twfdebug("updateCost cost:" .. cost .. " canPurchase: " .. canPurchase)
 
     if canPurchase == 1 then
-        TransmogFrameApplyButton:Enable()
-        TransmogFrameApplyButton:SetText("Apply Transmog")
+        ChromieTransmogFrameApplyButton:Enable()
+        ChromieTransmogFrameApplyButton:SetText("Apply Transmog")
     else
-        TransmogFrameApplyButton:Disable()
-        TransmogFrameApplyButton:SetText("Not enough money")
+        ChromieTransmogFrameApplyButton:Disable()
+        ChromieTransmogFrameApplyButton:SetText("Not enough money")
     end
 
     if cost > 0 then
         ConfigureCurrencyTextLayout()
-        TransmogFrameCurrencyText:Show()
+        ChromieTransmogFrameCurrencyText:Show()
         local copper, silver, gold = formatCurrency(cost)
         local costText = ""
 
@@ -113,7 +186,7 @@ function Transmog:updateCost(cost, canPurchase)
             costText = costText .. copper .. "|TInterface\\MoneyFrame\\UI-CopperIcon:14:14:2:0|t"
         end
 
-        TransmogFrameCurrencyText:SetText(costText)
+        ChromieTransmogFrameCurrencyText:SetText(costText)
     end
 end
 

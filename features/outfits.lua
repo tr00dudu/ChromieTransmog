@@ -1,10 +1,10 @@
-local Transmog = _G.Transmog
-local TransmogFrame_Find = string.find
+local Transmog = _G.ChromieTransmog
+local ChromieTransmogFrame_Find = string.find
 
 -- Populates the outfits dropdown menu with all saved outfits.
 function OutfitsDropDown_Initialize()
 
-    for name, data in pairs(transmogOutfits) do
+    for name, data in pairs(ChromieTransmogOutfits) do
         local info = {}
         info.text = name
         info.value = 1
@@ -32,7 +32,7 @@ function OutfitsDropDown_Initialize()
         UIDropDownMenu_AddButton(info)
     end
 
-    if Transmog:tableSize(transmogOutfits) < 20 then
+    if Transmog:tableSize(ChromieTransmogOutfits) < 20 then
         local _, _, _, color = GetItemQualityColor(2)
 
         local newOutfit = {}
@@ -55,6 +55,9 @@ function Transmog:IsOutfitAppearanceCompatible(slot, itemID)
 
     if itemID == self.HIDDEN_ITEM_ID then
         return self.hideableSlots[slot] == true
+    end
+    if itemID == self.UNKNOWN_MOG_ID then
+        return false
     end
 
     local equippedLink = GetInventoryItemLink('player', slot)
@@ -85,17 +88,17 @@ end
 
 -- Loads a saved outfit's transmog selections onto all equipment slots.
 function Transmog_LoadOutfit(self, outfit)
-    UIDropDownMenu_SetText(TransmogFrameOutfits, outfit)
+    UIDropDownMenu_SetText(ChromieTransmogFrameOutfits, outfit)
 
     Transmog.currentOutfit = outfit
 
     Transmog:EnableOutfitSaveButton()
 
-    TransmogFrameDeleteOutfit:Enable()
+    ChromieTransmogFrameDeleteOutfit:Enable()
 
     Transmog:hideItemBorders()
 
-    for slot, itemID in pairs(transmogOutfits[outfit]) do
+    for slot, itemID in pairs(ChromieTransmogOutfits[outfit]) do
 
         if not Transmog:IsOutfitAppearanceCompatible(slot, itemID) then
             twfdebug("Skipping incompatible outfit appearance " .. itemID .. " for slot " .. slot)
@@ -111,7 +114,7 @@ function Transmog_LoadOutfit(self, outfit)
         if hasItemEquipped then
 
             if itemID == 0 then
-                local _, _, eqItemLink = TransmogFrame_Find(GetInventoryItemLink('player', slot), "(item:%d+:%d+:%d+:%d+)");
+                local _, _, eqItemLink = ChromieTransmogFrame_Find(GetInventoryItemLink('player', slot), "(item:%d+:%d+:%d+:%d+)");
                 local _, _, _, _, _, _, _, _, equip_slot, outfitTex = GetItemInfo(eqItemLink)
                 eq_slot = equip_slot
                 tex = outfitTex
@@ -126,7 +129,7 @@ function Transmog_LoadOutfit(self, outfit)
             frame = Transmog:frameFromInvType(eq_slot, slot)
 
             if hasItemEquipped then
-                TransmogFramePlayerModel:TryOn(itemID)
+                Transmog:PreviewTryOn(itemID, slot)
             end
 
             if frame then
@@ -159,34 +162,34 @@ end
 
 -- Saves the current transmog selections as a saved outfit.
 function Transmog_SaveOutfit()
-	transmogOutfits[Transmog.currentOutfit] = {}
+	ChromieTransmogOutfits[Transmog.currentOutfit] = {}
     for InventorySlotId, itemID in pairs(Transmog.transmogStatusFromServer) do
-        if itemID ~= 0 then
-            transmogOutfits[Transmog.currentOutfit][InventorySlotId] = itemID
+        if itemID ~= 0 and itemID ~= Transmog.UNKNOWN_MOG_ID then
+            ChromieTransmogOutfits[Transmog.currentOutfit][InventorySlotId] = itemID
         end
     end
     for InventorySlotId, itemID in pairs(Transmog.transmogStatusToServer) do
-        if itemID ~= 0 then
-            transmogOutfits[Transmog.currentOutfit][InventorySlotId] = itemID
+        if itemID ~= 0 and itemID ~= Transmog.UNKNOWN_MOG_ID then
+            ChromieTransmogOutfits[Transmog.currentOutfit][InventorySlotId] = itemID
         end
     end
-    TransmogFrameSaveOutfit:Disable()
+    ChromieTransmogFrameSaveOutfit:Disable()
 end
 
 -- Enables the save outfit button when an outfit is currently selected.
 function Transmog:EnableOutfitSaveButton()
     if self.currentOutfit ~= nil then
-        TransmogFrameSaveOutfit:Enable()
+        ChromieTransmogFrameSaveOutfit:Enable()
     end
 end
 
 -- Deletes the currently selected outfit.
 function Transmog_deleteOutfit()
-    transmogOutfits[Transmog.currentOutfit] = nil
-    TransmogFrameSaveOutfit:Disable()
-    TransmogFrameDeleteOutfit:Disable()
+    ChromieTransmogOutfits[Transmog.currentOutfit] = nil
+    ChromieTransmogFrameSaveOutfit:Disable()
+    ChromieTransmogFrameDeleteOutfit:Disable()
     Transmog.currentOutfit = nil
-    UIDropDownMenu_SetText(TransmogFrameOutfits, "Outfits")
+    UIDropDownMenu_SetText(ChromieTransmogFrameOutfits, "Outfits")
     Transmog_revert()
 end
 
@@ -201,12 +204,12 @@ StaticPopupDialogs["TRANSMOG_NEW_OUTFIT"] = {
             StaticPopup_Show('TRANSMOG_OUTFIT_EMPTY_NAME')
             return
         end
-        if transmogOutfits[outfitName] then
+        if ChromieTransmogOutfits[outfitName] then
             StaticPopup_Show('TRANSMOG_OUTFIT_EXISTS')
             return
         end
-        transmogOutfits[outfitName] = {}
-        UIDropDownMenu_SetText(TransmogFrameOutfits, outfitName)
+        ChromieTransmogOutfits[outfitName] = {}
+        UIDropDownMenu_SetText(ChromieTransmogFrameOutfits, outfitName)
         Transmog.currentOutfit = outfitName
         Transmog:EnableOutfitSaveButton()
         Transmog_SaveOutfit()
