@@ -1,0 +1,23 @@
+## Interface: 30300
+## Title: Transmog
+## Notes: Transmog UI, ported from CMaNGOS to AzerothCore mod-transmog-plus
+## SavedVariablesPerCharacter: transmogOutfits
+core\bootstrap.lua
+core\state.lua
+core\constants.lua
+core\logging.lua
+core\helpers.lua
+features\item_cache.lua
+features\collection_tooltips.lua
+features\addon_protocol.lua
+features\apply_transmog.lua
+features\outfits.lua
+features\slash_commands.lua
+ui\lifecycle.lua
+ui\appearance_list.lua
+ui\slots_model.lua
+ui\costs.lua
+ui\tooltips.lua
+ui\animations.lua
+core\event_handlers.lua
+transmog.xml
