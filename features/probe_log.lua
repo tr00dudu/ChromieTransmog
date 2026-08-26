@@ -216,6 +216,21 @@ function Transmog:ChromieLogSnapshot(reason)
         if flags.remove then
             flagStr = flagStr .. " REMOVE"
         end
+        if flags.manageSets then
+            flagStr = flagStr .. " MANAGESETS"
+        end
+        if flags.saveSet then
+            flagStr = flagStr .. " SAVESET"
+        end
+        if flags.useSet then
+            flagStr = flagStr .. " USESET"
+        end
+        if flags.deleteSet then
+            flagStr = flagStr .. " DELETESET"
+        end
+        if flags.howSets then
+            flagStr = flagStr .. " HOWSETS"
+        end
         if flags.nav then
             flagStr = flagStr .. " NAV"
         end

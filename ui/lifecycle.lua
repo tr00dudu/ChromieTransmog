@@ -21,10 +21,11 @@ function Transmog_OnLoad()
     end
 
     UIDropDownMenu_Initialize(ChromieTransmogFrameOutfits, OutfitsDropDown_Initialize);
-    UIDropDownMenu_SetWidth(ChromieTransmogFrameOutfits, 123);
+    UIDropDownMenu_SetWidth(ChromieTransmogFrameOutfits, 120);
+    ChromieTransmogFrameSaveOutfit:Hide()
     ChromieTransmogFrameSaveOutfit:Disable()
-    ChromieTransmogFrameDeleteOutfit:Disable()
-    UIDropDownMenu_SetText(ChromieTransmogFrameOutfits, "Outfits")
+    ChromieTransmogFrameManageSets:Enable()
+    UIDropDownMenu_SetText(ChromieTransmogFrameOutfits, Transmog:ChromieSetsDropdownLabel())
 
     Transmog:CacheEquippedGear()
 
@@ -136,9 +137,16 @@ function Transmog_OnHide()
         Transmog.currentTransmogSlotName = nil
         Transmog.currentTransmogSlot = nil
         Transmog.currentOutfit = nil
+        Transmog.chromiePendingSet = nil
+        if Transmog.ChromieHideSetCreate then
+            Transmog:ChromieHideSetCreate()
+        end
+        ChromieTransmogFrameSaveOutfit:Hide()
         ChromieTransmogFrameSaveOutfit:Disable()
-        ChromieTransmogFrameDeleteOutfit:Disable()
-        UIDropDownMenu_SetText(ChromieTransmogFrameOutfits, "Outfits")
+        if Transmog.ChromieHideManageSets then
+            Transmog:ChromieHideManageSets()
+        end
+        UIDropDownMenu_SetText(ChromieTransmogFrameOutfits, Transmog:ChromieSetsDropdownLabel())
         return
     end
     Transmog.chromieVendorOpen = nil
@@ -159,9 +167,16 @@ function Transmog_OnHide()
     Transmog.currentTransmogSlotName = nil
     Transmog.currentTransmogSlot = nil
     Transmog.currentOutfit = nil
+    Transmog.chromiePendingSet = nil
+    if Transmog.ChromieHideSetCreate then
+        Transmog:ChromieHideSetCreate()
+    end
+    ChromieTransmogFrameSaveOutfit:Hide()
     ChromieTransmogFrameSaveOutfit:Disable()
-    ChromieTransmogFrameDeleteOutfit:Disable()
-    UIDropDownMenu_SetText(ChromieTransmogFrameOutfits, "Outfits")
+    if Transmog.ChromieHideManageSets then
+        Transmog:ChromieHideManageSets()
+    end
+    UIDropDownMenu_SetText(ChromieTransmogFrameOutfits, Transmog:ChromieSetsDropdownLabel())
 end
 
 -- Resets the transmog UI to its default state, optionally without re-requesting server data.
@@ -175,18 +190,16 @@ function Transmog:Reset(once)
     end
 
     ChromieTransmogFrameRaceBackground:SetTexture("Interface\\AddOns\\ChromieTransmog\\assets\\transmogbackground" .. self.race)
-    ChromieTransmogFrameApplyButton:Disable()
 
     self.currentPage = 1
     self.currentTransmogSlot = nil
     self.currentTransmogSlotName = nil
     self.currentTransmogItemClass = nil
 
-	ChromieTransmogFrameCurrencyText:Hide()
-
-    ChromieTransmogFramePlayerModel:SetUnit("player")
+    self:PreviewRedress(0)
 
     Transmog_switchTab(self.tab ~= "" and self.tab or "items")
     AddButtonOnEnterTextTooltip(ChromieTransmogFrameRevert, "Reset")
+    self:calculateCost()
 
 end

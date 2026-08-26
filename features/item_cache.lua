@@ -24,11 +24,20 @@ function Transmog:CacheEquippedGear()
     end
 end
 
--- Pre-caches all items referenced in saved outfits.
+-- Pre-caches all items referenced in known server sets.
 function Transmog:CacheOutfitsItems()
-    for _, data in pairs(ChromieTransmogOutfits) do
-        for _, itemId in data do
-            self:cacheItem(itemId)
+    if self.chromieSetItems then
+        for _, data in pairs(self.chromieSetItems) do
+            for _, itemId in pairs(data) do
+                self:cacheItem(itemId)
+            end
+        end
+    end
+    if ChromieTransmogOutfits then
+        for _, data in pairs(ChromieTransmogOutfits) do
+            for _, itemId in pairs(data) do
+                self:cacheItem(itemId)
+            end
         end
     end
 end

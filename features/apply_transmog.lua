@@ -217,6 +217,8 @@ function Transmog:ChromieAbortMultiApply()
     self.chromieMultiTotal = nil
     self.chromieMultiDone = nil
     self.chromieWaitingForNpc = nil
+    self.chromieRemoveAll = nil
+    self.chromieRemoveAllSlots = nil
     self:ChromieHideApplyProgress()
 end
 
@@ -275,7 +277,11 @@ StaticPopupDialogs["CHROMIE_TRANSMOG_APPLY_CONFIRM"] = {
     button1 = TEXT(YES),
     button2 = TEXT(NO),
     OnAccept = function()
-        Transmog:ChromieBeginQueuedApply()
+        if Transmog.ChromieIsFullRemovePending and Transmog:ChromieIsFullRemovePending() then
+            Transmog:ChromieStartRemoveAll()
+        else
+            Transmog:ChromieBeginQueuedApply()
+        end
     end,
     timeout = 0,
     whileDead = 1,
@@ -306,8 +312,16 @@ StaticPopupDialogs["CHROMIE_TRANSMOG_VENDOR_MODE"] = {
 
 -- Sends pending transmog changes through ChromieCraft gossip/vendor.
 function Apply_OnClick()
+    if Transmog.manageSetsOpen then
+        selectTransmogSlot(-1)
+    end
     local pending, copper = Transmog:ChromiePendingCost()
     if pending <= 0 then
+        return
+    end
+    if Transmog.ChromieIsFullRemovePending and Transmog:ChromieIsFullRemovePending() then
+        local msg = pending .. " transmogs queued. Remove all transmogrifications in one step?"
+        StaticPopup_Show("CHROMIE_TRANSMOG_APPLY_CONFIRM", msg)
         return
     end
     if pending == 1 then

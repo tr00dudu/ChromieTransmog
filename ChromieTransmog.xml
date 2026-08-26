@@ -641,11 +641,11 @@
             </Layer>
         </Layers>
         <Frames>
-            <Button name="$parentOutfits" inherits="UIDropDownMenuTemplate" text="Outfits">
+            <Button name="$parentOutfits" inherits="UIDropDownMenuTemplate" text="Quick apply set">
                 <Anchors>
                     <Anchor point="TOPLEFT">
                         <Offset>
-                            <AbsDimension x="5" y="-75"/>
+                            <AbsDimension x="0" y="-75"/>
                         </Offset>
                     </Anchor>
                 </Anchors>
@@ -654,14 +654,14 @@
                     </OnLoad>
                     <OnEnter>
                         GameTooltip:SetOwner(this, "ANCHOR_TOPRIGHT");
-                        GameTooltip:SetText('Select an Outfit', nil, nil, nil, nil, 1);
+                        GameTooltip:SetText('Select a Set', nil, nil, nil, nil, 1);
                     </OnEnter>
                     <OnLeave>
                         GameTooltip:Hide();
                     </OnLeave>
                 </Scripts>
             </Button>
-            <Button name="$parentSaveOutfit" inherits="UIPanelButtonTemplate2" text="Save" topLevel="true">
+            <Button name="$parentSaveOutfit" inherits="UIPanelButtonTemplate2" text="Save" topLevel="true" hidden="true">
                 <Size>
                     <AbsDimension x="60" y="24"/>
                 </Size>
@@ -678,35 +678,22 @@
                     </OnClick>
                 </Scripts>
             </Button>
-            <Button name="$parentDeleteOutfit">
+            <Button name="$parentManageSets" inherits="UIPanelButtonTemplate2" text="Manage Sets" topLevel="true">
                 <Size>
-                    <AbsDimension x="32" y="32"/>
+                    <AbsDimension x="90" y="24"/>
                 </Size>
                 <Anchors>
-                    <Anchor point="LEFT" relativeTo="$parentSaveOutfit" relativePoint="RIGHT">
+                    <Anchor point="LEFT" relativeTo="$parentOutfits" relativePoint="RIGHT">
                         <Offset>
-                            <AbsDimension x="-7" y="-1"/>
+                            <AbsDimension x="-15" y="2"/>
                         </Offset>
                     </Anchor>
                 </Anchors>
-                <HitRectInsets>
-                    <AbsInset left="9" right="7" top="-7" bottom="10"/>
-                </HitRectInsets>
                 <Scripts>
-                    <OnEnter>
-                        GameTooltip:SetOwner(this, "ANCHOR_RIGHT", -(this:GetWidth() / 4), -(this:GetHeight() / 4));
-                        GameTooltip:SetText("Delete Outfit");
-                    </OnEnter>
-                    <OnLeave>
-                        GameTooltip:Hide();
-                    </OnLeave>
                     <OnClick>
-                        StaticPopup_Show('CONFIRM_DELETE_OUTFIT')
+                        Transmog_ShowManageSets()
                     </OnClick>
                 </Scripts>
-                <NormalTexture file="Interface\Buttons\CancelButton-Up"/>
-                <PushedTexture file="Interface\Buttons\CancelButton-Down"/>
-                <HighlightTexture file="Interface\Buttons\CancelButton-Highlight" alphaMode="ADD"/>
             </Button>
             <Button name="$parentRevert" hidden="false" text="" topLevel="true">
                 <NormalTexture name="$parentNormalTexture" file="Interface\AddOns\ChromieTransmog\assets\revert">

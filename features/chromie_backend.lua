@@ -44,7 +44,7 @@ function Transmog:ChromieKeepGossipAlive()
     if ChromieTransmogFrame and ChromieTransmogFrame:IsShown() then
         return true
     end
-    return self.chromieJob == "load" or self.chromieJob == "apply" or self.chromieJob == "open"
+    return self.chromieJob == "load" or self.chromieJob == "apply" or self.chromieJob == "open" or self:ChromieIsSetJob()
 end
 
 function Transmog:ChromieForceCloseGossip()
@@ -114,6 +114,44 @@ function Transmog:ChromiePatchBlizzardClose()
         end)
     end
 
+    if not self.chromieWrappedPopupShow and StaticPopup_Show then
+        self.chromieWrappedPopupShow = true
+        local orig = StaticPopup_Show
+        StaticPopup_Show = function(which, text_arg1, text_arg2, data)
+            local popup = orig(which, text_arg1, text_arg2, data)
+            if Transmog.chromieJob == "sets-price"
+                and not Transmog.chromieSetPriceCaptured
+                and (which == "GOSSIP_CONFIRM" or which == "GOSSIP_CONFIRM_MONEY" or which == "GOSSIP_ENTER_CODE") then
+                Transmog:ChromieDimGossipConfirm()
+                Transmog:ChromieScheduleSetPriceCapture()
+            end
+            return popup
+        end
+    end
+
+    if not self.chromiePatchedMoneyFrame and MoneyFrame_Update then
+        self.chromiePatchedMoneyFrame = true
+        hooksecurefunc("MoneyFrame_Update", function(frame, money)
+            if Transmog.chromieJob ~= "sets-price" or Transmog.chromieSetPriceCaptured then
+                return
+            end
+            local name = frame
+            if type(frame) == "table" and frame.GetName then
+                name = frame:GetName()
+            end
+            if type(name) ~= "string" or not string.find(name, "StaticPopup", 1, true) then
+                return
+            end
+            local copper = tonumber(money)
+            -- The popup money frame first paints bag gold; the NPC cost comes after.
+            if copper and copper ~= GetMoney() then
+                Transmog.chromieSetSaveCopper = copper
+            end
+            Transmog:ChromieDimGossipConfirm()
+            Transmog:ChromieScheduleSetPriceCapture()
+        end)
+    end
+
     self:ChromiePatchNpcFeedback()
 end
 
@@ -125,7 +163,7 @@ function Transmog:ChromieShouldSuppressNpcFeedback()
     if ChromieTransmogFrame and ChromieTransmogFrame:IsShown() then
         return true
     end
-    return self.chromieJob == "apply" or self.chromieJob == "load" or self.chromieJob == "open"
+    return self.chromieJob == "apply" or self.chromieJob == "load" or self.chromieJob == "open" or self:ChromieIsSetJob()
 end
 
 function Transmog:ChromieIsNpcFeedbackText(msg)
@@ -252,8 +290,24 @@ function Transmog:ChromieOptionFlags(opt)
         flags.remove = true
         flags.nav = true
     end
+    if string.find(t, "save set", 1, true) then
+        flags.saveSet = true
+    end
+    if string.find(t, "use this set", 1, true) or t == "use set" then
+        flags.useSet = true
+    end
+    if string.find(t, "delete set", 1, true) then
+        flags.deleteSet = true
+    end
+    if string.find(t, "how sets", 1, true) then
+        flags.howSets = true
+        flags.nav = true
+    end
     if string.find(t, "how does", 1, true) or string.find(t, "update menu", 1, true) or string.find(t, "manage", 1, true) then
         flags.nav = true
+        if string.find(t, "set", 1, true) then
+            flags.manageSets = true
+        end
     end
     if string.find(t, "main hand", 1, true) then
         flags.slot = 16
@@ -512,6 +566,14 @@ function Transmog:SetOverlayEnabled(enabled)
     self.chromieWaitingForNpc = nil
     self.chromieApplySlot = nil
     self.chromieApplyItem = nil
+    self.chromieRemoveAll = nil
+    self.chromieRemoveAllSlots = nil
+    self.chromiePendingSet = nil
+    self.chromieSetSaveName = nil
+    self.chromieSetViewName = nil
+    if self.ChromieHideSetCreate then
+        self:ChromieHideSetCreate()
+    end
     if self.gossipConfirmClicker then
         self.gossipConfirmClicker:Hide()
     end
@@ -604,6 +666,9 @@ function Transmog:ChromieIsAppearanceMenu(options)
     if self:ChromieCountSlots(options) >= 3 then
         return false
     end
+    if self:ChromieIsSetMenu(options) then
+        return false
+    end
     local i = 1
     while options[i] do
         local flags = self:ChromieOptionFlags(options[i])
@@ -617,6 +682,9 @@ function Transmog:ChromieIsAppearanceMenu(options)
 end
 
 function Transmog:ChromieClickBack(reason)
+    if self.chromieSetBackSent then
+        return true
+    end
     local idx = self:ChromieFindFlagIndex(self:ChromieGetOptions(), "back")
     if not idx then
         return false
@@ -624,6 +692,7 @@ function Transmog:ChromieClickBack(reason)
     if self.ChromieLog then
         self:ChromieLog("SelectGossipOption(" .. idx .. ") Back... (" .. tostring(reason) .. ")")
     end
+    self.chromieSetBackSent = true
     SelectGossipOption(idx)
     return true
 end
@@ -667,6 +736,11 @@ function Transmog:ChromieHandleLoadGossip()
     local options = self:ChromieGetOptions()
     self:ChromieDumpOptions("load")
     local wantSlot = self.chromieLoadSlot
+
+    if self:ChromieIsSetMenu(options) then
+        self:ChromieClickBack("load-from-set")
+        return
+    end
 
     if self:ChromieCountSlots(options) >= 3 then
         local idx = self:ChromieFindSlotOption(options, wantSlot)
@@ -719,17 +793,24 @@ end
 function Transmog:ChromieHideGossipConfirm()
     StaticPopup_Hide("GOSSIP_CONFIRM")
     StaticPopup_Hide("GOSSIP_CONFIRM_MONEY")
+    StaticPopup_Hide("GOSSIP_ENTER_CODE")
 end
 
 function Transmog:ChromieAutoConfirmGossipPopup(which)
-    if which ~= "GOSSIP_CONFIRM" and which ~= "GOSSIP_CONFIRM_MONEY" then
+    if which ~= "GOSSIP_CONFIRM" and which ~= "GOSSIP_CONFIRM_MONEY" and which ~= "GOSSIP_ENTER_CODE" then
         return
     end
     -- Vanilla Warpweaver confirms (hide / paid mog) must stay when overlay is off.
     if not self.overlayEnabled or self.probeActive then
         return
     end
-    if self.chromieJob ~= "apply" or not self.chromieApplyClicked then
+    if self.chromieJob == "sets-price" then
+        self:ChromieDimGossipConfirm()
+        self:ChromieScheduleSetPriceCapture()
+        return
+    end
+    local setJob = self:ChromieIsSetJob()
+    if (self.chromieJob ~= "apply" and not setJob) or not self.chromieApplyClicked then
         return
     end
     if self.chromieGossipConfirmed then
@@ -746,11 +827,26 @@ function Transmog:ChromieAutoConfirmGossipPopup(which)
             if not name then
                 name = StaticPopup_Visible("GOSSIP_CONFIRM_MONEY")
             end
+            if not name then
+                name = StaticPopup_Visible("GOSSIP_ENTER_CODE")
+            end
             if name then
+                if Transmog.chromieSetSaveName then
+                    local box = getglobal(name .. "EditBox")
+                    if box then
+                        box:SetText(Transmog.chromieSetSaveName)
+                    end
+                end
                 local btn = getglobal(name .. "Button1")
                 if btn then
                     btn:Click()
                 end
+            end
+            if Transmog.chromieJob == "sets-use" then
+                Transmog.chromieSetUseApplied = true
+                Transmog:ChromieKickSetReturn()
+            elseif Transmog.chromieJob == "sets-delete" then
+                Transmog:ChromieKickSetReturn()
             end
         end)
         self.gossipConfirmClicker = f
@@ -758,11 +854,178 @@ function Transmog:ChromieAutoConfirmGossipPopup(which)
     self.gossipConfirmClicker:Show()
 end
 
+function Transmog:ChromieDimGossipConfirm()
+    local i = 1
+    while i <= 4 do
+        local f = getglobal("StaticPopup" .. i)
+        if f and f:IsShown() then
+            local which = f.which
+            if which == "GOSSIP_CONFIRM" or which == "GOSSIP_CONFIRM_MONEY" or which == "GOSSIP_ENTER_CODE" then
+                f:SetAlpha(0)
+                if f.EnableMouse then
+                    f:EnableMouse(false)
+                end
+            end
+        end
+        i = i + 1
+    end
+end
+
+function Transmog:ChromieCloakGossipConfirm()
+    self:ChromieDimGossipConfirm()
+    self:ChromieHideGossipConfirm()
+    local i = 1
+    while i <= 4 do
+        local f = getglobal("StaticPopup" .. i)
+        if f then
+            f:SetAlpha(1)
+            if f.EnableMouse then
+                f:EnableMouse(true)
+            end
+        end
+        i = i + 1
+    end
+end
+
+function Transmog:ChromieOnGossipConfirm(index, text, money)
+    if self.chromieJob ~= "sets-price" or self.chromieSetPriceCaptured then
+        return
+    end
+    local copper = tonumber(money)
+    if copper and copper ~= GetMoney() then
+        self.chromieSetSaveCopper = copper
+    end
+    self:ChromieScheduleSetPriceCapture()
+end
+
+function Transmog:ChromieReadPopupCopper(frameName)
+    if not frameName then
+        return nil
+    end
+    local goldBtn = getglobal(frameName .. "MoneyFrameGoldButton")
+    local silverBtn = getglobal(frameName .. "MoneyFrameSilverButton")
+    local copperBtn = getglobal(frameName .. "MoneyFrameCopperButton")
+    if goldBtn or silverBtn or copperBtn then
+        local function digits(btn)
+            if not btn then
+                return 0
+            end
+            local raw = btn:GetText() or ""
+            raw = string.gsub(raw, "[^0-9]", "")
+            return tonumber(raw) or 0
+        end
+        return digits(goldBtn) * 10000 + digits(silverBtn) * 100 + digits(copperBtn)
+    end
+    local popup = getglobal(frameName)
+    local mf = popup and getglobal(frameName .. "MoneyFrame")
+    if mf and type(mf.staticMoney) == "number" then
+        return mf.staticMoney
+    end
+    return nil
+end
+
+function Transmog:ChromieScheduleSetPriceCapture()
+    if self.chromieSetPriceCaptured or self.chromieJob ~= "sets-price" then
+        return
+    end
+    if not self.setSaveCostCapture then
+        local f = CreateFrame("Frame")
+        f:Hide()
+        f:SetScript("OnUpdate", function()
+            this.n = (this.n or 0) + 1
+            Transmog:ChromieDimGossipConfirm()
+            if this.n < 2 then
+                return
+            end
+            local vis = StaticPopup_Visible("GOSSIP_CONFIRM")
+            if not vis then
+                vis = StaticPopup_Visible("GOSSIP_CONFIRM_MONEY")
+            end
+            local scraped = vis and Transmog:ChromieReadPopupCopper(vis)
+            if scraped and scraped == GetMoney() and (not Transmog.chromieSetSaveCopper or Transmog.chromieSetSaveCopper == GetMoney()) and this.n < 5 then
+                return
+            end
+            this:Hide()
+            this.n = 0
+            Transmog:ChromieCaptureSetPrice()
+        end)
+        self.setSaveCostCapture = f
+    end
+    if not self.setSaveCostCapture:IsShown() then
+        self.setSaveCostCapture.n = 0
+        self.setSaveCostCapture:Show()
+    end
+end
+
+function Transmog:ChromieCaptureSetPrice()
+    if self.chromieSetPriceCaptured or self.chromieJob ~= "sets-price" then
+        return
+    end
+    local vis = StaticPopup_Visible("GOSSIP_CONFIRM")
+    if not vis then
+        vis = StaticPopup_Visible("GOSSIP_CONFIRM_MONEY")
+    end
+    if not vis then
+        vis = StaticPopup_Visible("GOSSIP_ENTER_CODE")
+    end
+    local scraped = vis and self:ChromieReadPopupCopper(vis)
+    if scraped and scraped ~= GetMoney() then
+        self.chromieSetSaveCopper = scraped
+    elseif scraped and self.chromieSetSaveCopper == nil then
+        self.chromieSetSaveCopper = scraped
+    end
+    if not vis and self.chromieSetSaveCopper == nil then
+        return
+    end
+    self.chromieSetPriceCaptured = true
+    self.chromieSetSaveCopper = self.chromieSetSaveCopper or 0
+    self:ChromieCloakGossipConfirm()
+    if self.ChromieUpdateManageSetPrice then
+        self:ChromieUpdateManageSetPrice()
+    end
+    self.chromieSetViewPhase = "returning"
+    self:ChromieClickBack("sets-price-done")
+    self:ChromieKickSetReturn()
+end
+
 function Transmog:ChromieHandleApplyGossip()
     local options = self:ChromieGetOptions()
     self:ChromieDumpOptions("apply")
     local wantSlot = self.chromieApplySlot
     local wantItem = self.chromieApplyItem
+
+    if self:ChromieIsSetMenu(options) then
+        self:ChromieClickBack("apply-from-set")
+        return
+    end
+
+    if self.chromieRemoveAll then
+        if self:ChromieCountSlots(options) >= 3 then
+            local idx = self:ChromieFindFlagIndex(options, "remove")
+            if idx then
+                self.chromieApplyClicked = true
+                self.chromieGossipConfirmed = nil
+                if self.ChromieLog then
+                    self:ChromieLog("SelectGossipOption(" .. idx .. ") Remove all transmogrifications")
+                end
+                SelectGossipOption(idx)
+                return
+            end
+            self:Chat("Remove all transmogrifications was not on the menu.")
+            self.chromieRemoveAll = nil
+            self.chromieJob = "open"
+            self:calculateCost()
+            return
+        end
+        if self:ChromieClickBack("remove-all-need-main") then
+            return
+        end
+        self:Chat("Apply failed: could not reach the main transmog menu.")
+        self.chromieRemoveAll = nil
+        self.chromieJob = "open"
+        self:calculateCost()
+        return
+    end
 
     if self:ChromieCountSlots(options) >= 3 then
         local idx = self:ChromieFindSlotOption(options, wantSlot)
@@ -866,6 +1129,845 @@ function Transmog:ChromieHandleApplyMerchant()
     self:calculateCost()
 end
 
+function Transmog:ChromieIsSetJob()
+    local job = self.chromieJob
+    return job == "sets-list" or job == "sets-view" or job == "sets-save" or job == "sets-use" or job == "sets-delete" or job == "sets-price"
+end
+
+function Transmog:ChromieIsSetNameOption(opt)
+    if not opt or opt.itemId then
+        return false
+    end
+    local flags = self:ChromieOptionFlags(opt)
+    if flags.nav or flags.saveSet or flags.useSet or flags.deleteSet or flags.hide or flags.remove or flags.search or flags.slot then
+        return false
+    end
+    local lower = string.lower(opt.text or "")
+    if string.find(lower, "statue_02", 1, true) then
+        return true
+    end
+    return false
+end
+
+function Transmog:ChromieGossipKind()
+    local options = self.chromieLastOptions or self:ChromieGetOptions()
+    if self:ChromieCountSlots(options) >= 3 then
+        return "main"
+    end
+    if self:ChromieFindFlagIndex(options, "useSet") or self:ChromieFindFlagIndex(options, "deleteSet") then
+        return "set-view"
+    end
+    local hasSave = self:ChromieFindFlagIndex(options, "saveSet")
+    local hasItems = false
+    local hasSetName = false
+    local i = 1
+    while options[i] do
+        if options[i].itemId then
+            hasItems = true
+        elseif self:ChromieIsSetNameOption(options[i]) then
+            hasSetName = true
+        end
+        i = i + 1
+    end
+    if hasSave and hasItems then
+        return "set-save"
+    end
+    if hasSave or self:ChromieFindFlagIndex(options, "howSets") or hasSetName then
+        return "set-list"
+    end
+    return "other"
+end
+
+function Transmog:ChromieIsSetMenu(options)
+    options = options or self.chromieLastOptions
+    if not options then
+        return false
+    end
+    if self:ChromieCountSlots(options) >= 3 then
+        return false
+    end
+    if self:ChromieFindFlagIndex(options, "useSet") or self:ChromieFindFlagIndex(options, "deleteSet") then
+        return true
+    end
+    if self:ChromieFindFlagIndex(options, "saveSet") or self:ChromieFindFlagIndex(options, "howSets") then
+        return true
+    end
+    local i = 1
+    while options[i] do
+        if self:ChromieIsSetNameOption(options[i]) then
+            return true
+        end
+        i = i + 1
+    end
+    return false
+end
+
+function Transmog:ChromieKickSetReturn()
+    if not self.setReturnKicker then
+        local f = CreateFrame("Frame")
+        f:Hide()
+        f:SetScript("OnUpdate", function()
+            this.elapsed = (this.elapsed or 0) + arg1
+            if this.elapsed < 0.2 then
+                return
+            end
+            this.elapsed = 0
+            this.ticks = (this.ticks or 0) + 1
+            if this.ticks > 12 then
+                this:Hide()
+                return
+            end
+            local job = Transmog.chromieJob
+            if job == "sets-use" then
+                Transmog:ChromieHandleSetsUseGossip()
+            elseif job == "sets-delete" then
+                Transmog:ChromieHandleSetsDeleteGossip()
+            elseif job == "sets-view" then
+                Transmog:ChromieHandleSetsViewGossip()
+            elseif job == "sets-price" then
+                Transmog:ChromieHandleSetsPriceGossip()
+            elseif job == "sets-save" then
+                Transmog:ChromieHandleSetsSaveGossip()
+            else
+                this:Hide()
+            end
+        end)
+        self.setReturnKicker = f
+    end
+    self.setReturnKicker.elapsed = 0
+    self.setReturnKicker.ticks = 0
+    self.setReturnKicker:Hide()
+    self.setReturnKicker:Show()
+end
+
+function Transmog:ChromieGossipReady()
+    local options = self:ChromieGetOptions()
+    if self:tableSize(options) > 0 then
+        return true
+    end
+    -- Use this set leaves the same view open; a Back... can be in flight
+    -- with empty GetGossipOptions until the next page arrives.
+    if self.chromieSetBackSent or self.chromieSetUseApplied or self.chromieSetViewPhase == "returning" then
+        return false
+    end
+    self:Chat("Talk to Warpweaver to continue.")
+    self.chromieWaitingForNpc = true
+    self.chromieJob = "open"
+    self.chromieApplyClicked = nil
+    if self.calculateCost then
+        self:calculateCost()
+    end
+    return false
+end
+
+function Transmog:ChromieFindSetNameIndex(options, name)
+    local i = 1
+    while options[i] do
+        if self:ChromieIsSetNameOption(options[i]) and options[i].stripped == name then
+            return options[i].index
+        end
+        i = i + 1
+    end
+    return nil
+end
+
+function Transmog:ChromieGuessSlotForItem(itemId, used)
+    if not itemId or itemId == self.HIDDEN_ITEM_ID then
+        return nil
+    end
+    self:cacheItem(itemId)
+    local _, _, _, _, _, _, _, _, invType = GetItemInfo(itemId)
+    if not invType then
+        return nil
+    end
+    if invType == "INVTYPE_WEAPON" then
+        if not used[16] then
+            return 16
+        end
+        if not used[17] then
+            return 17
+        end
+        return 16
+    end
+    local frame = self:frameFromInvType(invType)
+    if frame then
+        return self.inventorySlots[frame:GetName()]
+    end
+    return nil
+end
+
+function Transmog:ChromieParseSetItems(options)
+    local items = {}
+    local used = {}
+    local i = 1
+    while options[i] do
+        local id = options[i].itemId
+        if id then
+            local slot = self:ChromieGuessSlotForItem(id, used)
+            if slot then
+                items[slot] = id
+                used[slot] = true
+            elseif id > 1 then
+                items["id" .. id] = id
+            end
+        end
+        i = i + 1
+    end
+    return items
+end
+
+function Transmog:ChromieScrapeSetNames()
+    local options = self.chromieLastOptions or self:ChromieGetOptions()
+    self.chromieSets = {}
+    local i = 1
+    while options[i] do
+        if self:ChromieIsSetNameOption(options[i]) then
+            table.insert(self.chromieSets, options[i].stripped)
+        end
+        i = i + 1
+    end
+    if self.ChromieLog then
+        self:ChromieLog("sets scraped=" .. self:tableSize(self.chromieSets))
+    end
+end
+
+function Transmog:ChromieStoreSetItems(name, items)
+    if not name then
+        return
+    end
+    if not self.chromieSetItems then
+        self.chromieSetItems = {}
+    end
+    self.chromieSetItems[name] = items
+    if self.chromiePendingSet and self.chromiePendingSet.name == name then
+        self.chromiePendingSet.items = items
+    end
+end
+
+function Transmog:ChromieFinishSetJob()
+    local wantUse = self.chromieWantSetUse
+    self.chromieWantSetUse = nil
+    local wantPrice = self.chromieWantSetPrice and self.manageSetsOpen
+    self.chromieWantSetPrice = nil
+    self.chromieJob = "open"
+    self.chromieApplyClicked = nil
+    self.chromieSetViewPhase = nil
+    self.chromieSetsGotList = nil
+    self.chromieSetSaveName = nil
+    self.chromieSetSaveAccepted = nil
+    self.chromieSetSavePrompted = nil
+    self.chromieSetSaveIndex = nil
+    self.chromieSetSaveCancelling = nil
+    self.chromieSetPriceCaptured = nil
+    self.chromieSetPriceClicked = nil
+    self.chromieSetUseApplied = nil
+    self.chromieSetBackSent = nil
+    if self.setReturnKicker then
+        self.setReturnKicker:Hide()
+    end
+    if self.ChromieRefreshSetsDropdown then
+        self:ChromieRefreshSetsDropdown()
+    end
+    if self.ChromieRefreshManageSets then
+        self:ChromieRefreshManageSets()
+    end
+    if self.ChromieUpdateManageSetPrice then
+        self:ChromieUpdateManageSetPrice()
+    end
+    if wantUse then
+        self:ChromieStartSetUse(wantUse)
+        return
+    end
+    if wantPrice then
+        self:ChromieStartSetPrice()
+        return
+    end
+    local queued = self.chromieQueuedSlot
+    self.chromieQueuedSlot = nil
+    if queued then
+        self:ChromieEnsureSlot(queued)
+    end
+end
+
+function Transmog:ChromieApplySetItemsLocally(name)
+    local items = self.chromieSetItems and self.chromieSetItems[name]
+    if not items then
+        return
+    end
+    local _, slot
+    for _, slot in pairs(self.inventorySlots) do
+        self.transmogStatusFromServer[slot] = 0
+        self.transmogStatusToServer[slot] = 0
+    end
+    local itemId
+    for slot, itemId in pairs(items) do
+        if type(slot) == "number" and itemId then
+            self.transmogStatusFromServer[slot] = itemId
+            self.transmogStatusToServer[slot] = itemId
+            if itemId > 1 and self.cacheItem then
+                self:cacheItem(itemId)
+            end
+        end
+    end
+    if self.transmogStatus then
+        self:transmogStatus()
+    end
+end
+
+function Transmog:ChromieRefreshUiAfterSetUse(name)
+    if self.ChromieHideManageSets then
+        self:ChromieHideManageSets()
+    end
+    selectTransmogSlot(-1)
+    ChromieTransmogFrameNoTransmogs:Hide()
+    ChromieTransmogFrameCollected:Hide()
+
+    local items = self.chromieSetItems and self.chromieSetItems[name]
+    if items then
+        local slot, itemId
+        for slot, itemId in pairs(items) do
+            if type(slot) == "number" and itemId then
+                local link = GetInventoryItemLink("player", slot)
+                if itemId == self.HIDDEN_ITEM_ID then
+                    self:addTransmogAnim(slot)
+                    if self.ChromieRememberMog then
+                        self:ChromieRememberMog(link, true)
+                    end
+                elseif itemId > 1 then
+                    if self.cacheItem then
+                        self:cacheItem(itemId)
+                    end
+                    self:addTransmogAnim(slot)
+                    if self.ChromieRememberMog then
+                        self:ChromieRememberMog(link, false)
+                    end
+                elseif itemId == 0 then
+                    self:addTransmogAnim(slot, "reset")
+                    if self.ChromieForgetMog then
+                        self:ChromieForgetMog(link)
+                    end
+                end
+            end
+        end
+    end
+
+    if self.transmogStatus then
+        self:transmogStatus()
+    end
+    if self.RefreshPendingGlows then
+        self:RefreshPendingGlows()
+    end
+    -- Unit appearance updates a few frames after Use this set.
+    self:PreviewRedress(10)
+end
+
+function Transmog:ChromieHandleSetsListGossip()
+    if not self:ChromieGossipReady() then
+        return
+    end
+    local kind = self:ChromieGossipKind()
+    if kind == "main" then
+        if self.chromieSetsGotList then
+            self.chromieSetsGotList = nil
+            self:ChromieFinishSetJob()
+            return
+        end
+        local idx = self:ChromieFindFlagIndex(self.chromieLastOptions, "manageSets")
+        if not idx then
+            self.chromieSets = self.chromieSets or {}
+            self:ChromieFinishSetJob()
+            return
+        end
+        SelectGossipOption(idx)
+        return
+    end
+    if kind == "set-list" then
+        self:ChromieScrapeSetNames()
+        self.chromieSetsGotList = true
+        if self:ChromieClickBack("sets-list-done") then
+            return
+        end
+        self:ChromieFinishSetJob()
+        return
+    end
+    if self:ChromieClickBack("sets-list-wrong") then
+        return
+    end
+    self:ChromieFinishSetJob()
+end
+
+function Transmog:ChromieHandleSetsViewGossip()
+    if not self:ChromieGossipReady() then
+        return
+    end
+    local name = self.chromieSetViewName
+    local kind = self:ChromieGossipKind()
+    if kind == "main" then
+        if self.chromieSetViewPhase == "returning" then
+            self.chromieSetViewPhase = nil
+            self:PreviewRedress(0)
+            self:calculateCost()
+            self:ChromieFinishSetJob()
+            return
+        end
+        local idx = self:ChromieFindFlagIndex(self.chromieLastOptions, "manageSets")
+        if idx then
+            SelectGossipOption(idx)
+            return
+        end
+        self:Chat("Manage sets was not on the menu.")
+        self:ChromieFinishSetJob()
+        return
+    end
+    if kind == "set-list" then
+        if self.chromieSetViewPhase == "returning" then
+            self:ChromieClickBack("sets-view-home")
+            return
+        end
+        local idx = self:ChromieFindSetNameIndex(self.chromieLastOptions, name)
+        if idx then
+            SelectGossipOption(idx)
+            return
+        end
+        self:Chat("Set \"" .. tostring(name) .. "\" was not in the list.")
+        self:ChromieClickBack("sets-view-missing")
+        self.chromieSetViewPhase = "returning"
+        return
+    end
+    if kind == "set-view" then
+        self:ChromieStoreSetItems(name, self:ChromieParseSetItems(self.chromieLastOptions))
+        self.chromieSetViewPhase = "returning"
+        if self:ChromieClickBack("sets-view-done") then
+            return
+        end
+    end
+    if self:ChromieClickBack("sets-view-wrong") then
+        return
+    end
+    self:ChromieFinishSetJob()
+end
+
+function Transmog:ChromieHandleSetsUseGossip()
+    if not self:ChromieGossipReady() then
+        return
+    end
+    local name = self.chromieSetViewName
+    local kind = self:ChromieGossipKind()
+
+    -- Use this set does not close gossip and stays on the set view.
+    -- First page is two Back... clicks away: view -> list -> main.
+    if kind == "main" then
+        if self.chromieSetUseApplied or self.chromieSetViewPhase == "returning" then
+            self:ChromieApplySetItemsLocally(name)
+            self:ChromieRefreshUiAfterSetUse(name)
+            self.chromiePendingSet = nil
+            self.chromieSetUseApplied = nil
+            self.chromieSetViewPhase = nil
+            PlaySoundFile("Interface\\AddOns\\ChromieTransmog\\assets\\ui_transmogrify_apply.ogg", "Dialog")
+            self:ChromieFinishSetJob()
+            self:calculateCost()
+            return
+        end
+        local idx = self:ChromieFindFlagIndex(self.chromieLastOptions, "manageSets")
+        if idx then
+            SelectGossipOption(idx)
+            return
+        end
+        self:ChromieFinishSetJob()
+        return
+    end
+
+    if self.chromieSetUseApplied or self.chromieSetViewPhase == "returning" then
+        self:ChromieClickBack("sets-use-back")
+        return
+    end
+
+    if kind == "set-list" then
+        local idx = self:ChromieFindSetNameIndex(self.chromieLastOptions, name)
+        if idx then
+            SelectGossipOption(idx)
+            return
+        end
+        self:Chat("Set \"" .. tostring(name) .. "\" was not in the list.")
+        self.chromieSetViewPhase = "returning"
+        self:ChromieClickBack("sets-use-missing")
+        return
+    end
+
+    if kind == "set-view" then
+        if self.chromieApplyClicked then
+            -- Confirm accepted; menu is still this set view.
+            self.chromieSetUseApplied = true
+            self:ChromieStoreSetItems(name, self:ChromieParseSetItems(self.chromieLastOptions))
+            self:ChromieClickBack("sets-use-applied")
+            self:ChromieKickSetReturn()
+            return
+        end
+        local idx = self:ChromieFindFlagIndex(self.chromieLastOptions, "useSet")
+        if idx then
+            self.chromieApplyClicked = true
+            self.chromieGossipConfirmed = nil
+            SelectGossipOption(idx)
+            return
+        end
+        self:Chat("Use this set was not on the menu.")
+        self.chromieSetViewPhase = "returning"
+        self:ChromieClickBack("sets-use-no-button")
+        return
+    end
+
+    self:ChromieClickBack("sets-use-wrong")
+end
+
+function Transmog:ChromieHandleSetsDeleteGossip()
+    if not self:ChromieGossipReady() then
+        return
+    end
+    local name = self.chromieSetViewName
+    local kind = self:ChromieGossipKind()
+    if kind == "main" then
+        if self.chromieSetViewPhase == "returning" then
+            self:ChromieRemoveSetName(name)
+            if self.currentOutfit == name then
+                self.currentOutfit = nil
+                self.chromiePendingSet = nil
+                UIDropDownMenu_SetText(ChromieTransmogFrameOutfits, self:ChromieSetsDropdownLabel())
+                self:PreviewRedress(0)
+            end
+            self.chromieSetViewPhase = nil
+            self:ChromieFinishSetJob()
+            self:calculateCost()
+            return
+        end
+        local idx = self:ChromieFindFlagIndex(self.chromieLastOptions, "manageSets")
+        if idx then
+            SelectGossipOption(idx)
+            return
+        end
+        self:ChromieFinishSetJob()
+        return
+    end
+    if kind == "set-list" then
+        if self.chromieApplyClicked or self.chromieSetViewPhase == "returning" then
+            self.chromieApplyClicked = nil
+            self:ChromieScrapeSetNames()
+            self.chromieSetViewPhase = "returning"
+            self:ChromieClickBack("sets-delete-home")
+            return
+        end
+        local idx = self:ChromieFindSetNameIndex(self.chromieLastOptions, name)
+        if idx then
+            SelectGossipOption(idx)
+            return
+        end
+        self.chromieSetViewPhase = "returning"
+        self:ChromieClickBack("sets-delete-missing")
+        return
+    end
+    if kind == "set-view" then
+        if self.chromieApplyClicked then
+            self:ChromieClickBack("sets-delete-applied")
+            return
+        end
+        local idx = self:ChromieFindFlagIndex(self.chromieLastOptions, "deleteSet")
+        if idx then
+            self.chromieApplyClicked = true
+            self.chromieGossipConfirmed = nil
+            SelectGossipOption(idx)
+            return
+        end
+        self.chromieSetViewPhase = "returning"
+        self:ChromieClickBack("sets-delete-no-button")
+        return
+    end
+    if self:ChromieClickBack("sets-delete-wrong") then
+        return
+    end
+    self:ChromieFinishSetJob()
+end
+
+function Transmog:ChromieHandleSetsSaveGossip()
+    if not self:ChromieGossipReady() then
+        return
+    end
+    local kind = self:ChromieGossipKind()
+    if kind == "main" then
+        if self.chromieSetViewPhase == "returning" then
+            self:ChromieFinishSetJob()
+            self:calculateCost()
+            return
+        end
+        local idx = self:ChromieFindFlagIndex(self.chromieLastOptions, "manageSets")
+        if idx then
+            SelectGossipOption(idx)
+            return
+        end
+        self:Chat("Manage sets was not on the menu.")
+        self:ChromieFinishSetJob()
+        return
+    end
+    if kind == "set-list" then
+        if self.chromieSetViewPhase == "returning" then
+            self:ChromieClickBack("sets-save-home")
+            return
+        end
+        local idx = self:ChromieFindFlagIndex(self.chromieLastOptions, "saveSet")
+        if idx then
+            SelectGossipOption(idx)
+            return
+        end
+        self:Chat("Cannot save another set (limit reached).")
+        self.chromieSetViewPhase = "returning"
+        self:ChromieClickBack("sets-save-full")
+        return
+    end
+    if kind == "set-save" then
+        local idx = self:ChromieFindFlagIndex(self.chromieLastOptions, "saveSet")
+        if not idx then
+            self:Chat("Nothing to save. Transmogrify at least one item first.")
+            self.chromieSetViewPhase = "returning"
+            self:ChromieClickBack("sets-save-empty")
+            return
+        end
+        self.chromieApplyClicked = true
+        self.chromieGossipConfirmed = nil
+        local ok = pcall(SelectGossipOption, idx, self.chromieSetSaveName, true)
+        if not ok then
+            SelectGossipOption(idx)
+        end
+        return
+    end
+    if self.chromieSetViewPhase == "returning" then
+        if kind == "set-list" then
+            self:ChromieClickBack("sets-save-abort")
+            return
+        end
+        if kind == "main" then
+            self:ChromieFinishSetJob()
+            return
+        end
+    end
+    if self:ChromieClickBack("sets-save-wrong") then
+        return
+    end
+    self:ChromieFinishSetJob()
+end
+
+function Transmog:ChromieFinishSetSave()
+    local name = self.chromieSetSaveName
+    if name then
+        self:ChromieAddSetName(name)
+        if self.ChromieHideSetCreate then
+            self:ChromieHideSetCreate()
+        end
+        if self.ChromieRefreshManageSets then
+            self:ChromieRefreshManageSets()
+        end
+    end
+    self.chromiePendingSet = nil
+    self.chromieSetSaveName = nil
+    self.chromieSetSaveIndex = nil
+    self.chromieApplyClicked = nil
+    self.chromieWaitingForNpc = true
+    self.chromieJob = "open"
+    if self.ChromieRefreshSetsDropdown then
+        self:ChromieRefreshSetsDropdown()
+    end
+    if self.ChromieRefreshManageSets then
+        self:ChromieRefreshManageSets()
+    end
+    self:Chat("Set saved. Talk to Warpweaver if gossip closed.")
+    self:calculateCost()
+end
+
+function Transmog:ChromieHandleSetsPriceGossip()
+    if not self:ChromieGossipReady() then
+        return
+    end
+    local kind = self:ChromieGossipKind()
+    if kind == "main" then
+        if self.chromieSetViewPhase == "returning" then
+            self:ChromieFinishSetJob()
+            return
+        end
+        local idx = self:ChromieFindFlagIndex(self.chromieLastOptions, "manageSets")
+        if idx then
+            SelectGossipOption(idx)
+            return
+        end
+        self:ChromieFinishSetJob()
+        return
+    end
+    if kind == "set-list" then
+        if self.chromieSetViewPhase == "returning" then
+            self:ChromieClickBack("sets-price-home")
+            return
+        end
+        self:ChromieScrapeSetNames()
+        local idx = self:ChromieFindFlagIndex(self.chromieLastOptions, "saveSet")
+        if idx then
+            SelectGossipOption(idx)
+            return
+        end
+        self.chromieSetViewPhase = "returning"
+        self:ChromieClickBack("sets-price-no-save")
+        return
+    end
+    if kind == "set-save" then
+        if self.chromieSetPriceCaptured then
+            self.chromieSetViewPhase = "returning"
+            self:ChromieClickBack("sets-price-back")
+            return
+        end
+        if self.chromieSetPriceClicked then
+            return
+        end
+        local idx = self:ChromieFindFlagIndex(self.chromieLastOptions, "saveSet")
+        if not idx then
+            self.chromieSetViewPhase = "returning"
+            self:ChromieClickBack("sets-price-empty")
+            return
+        end
+        self.chromieSetPriceClicked = true
+        SelectGossipOption(idx)
+        return
+    end
+    if self.chromieSetViewPhase == "returning" then
+        if self:ChromieClickBack("sets-price-return") then
+            return
+        end
+        self:ChromieFinishSetJob()
+        return
+    end
+    if self:ChromieClickBack("sets-price-wrong") then
+        return
+    end
+    self:ChromieFinishSetJob()
+end
+
+function Transmog:ChromieStartSetPrice()
+    if self.chromieJob == "sets-price" then
+        return
+    end
+    if self:ChromieIsSetJob() or self.chromieJob == "load" or self.chromieJob == "apply" then
+        self.chromieWantSetPrice = true
+        if self.ChromieUpdateManageSetPrice then
+            self:ChromieUpdateManageSetPrice()
+        end
+        if self.ChromieRefreshManageSetList then
+            self:ChromieRefreshManageSetList()
+        end
+        return
+    end
+    self.chromieWantSetPrice = nil
+    if self.chromieWaitingForNpc then
+        if self.ChromieUpdateManageSetPrice then
+            self:ChromieUpdateManageSetPrice()
+        end
+        return
+    end
+    if not self:ChromieHasAnyMog() or self:tableSize(self.chromieSets or {}) >= self.CHROMIE_MAX_SETS then
+        self.chromieSetSaveCopper = nil
+        if self.ChromieUpdateManageSetPrice then
+            self:ChromieUpdateManageSetPrice()
+        end
+        return
+    end
+    self.chromieJob = "sets-price"
+    self.chromieSetViewPhase = nil
+    self.chromieSetPriceCaptured = nil
+    self.chromieSetPriceClicked = nil
+    self.chromieSetSaveCopper = nil
+    self.chromieApplyClicked = nil
+    self.chromieGossipConfirmed = nil
+    if self.ChromieUpdateManageSetPrice then
+        self:ChromieUpdateManageSetPrice()
+    end
+    if self.ChromieRefreshManageSetList then
+        self:ChromieRefreshManageSetList()
+    end
+    self:ChromieHandleSetsPriceGossip()
+end
+
+function Transmog:ChromieStartSetView(name)
+    if not name or self:ChromieIsSetJob() then
+        return
+    end
+    self.chromieJob = "sets-view"
+    self.chromieSetViewName = name
+    self.chromieSetViewPhase = nil
+    self.chromieApplyClicked = nil
+    self:ChromieHandleSetsViewGossip()
+end
+
+function Transmog:ChromieStartSetUse(name)
+    name = name or (self.chromiePendingSet and self.chromiePendingSet.name)
+    if not name then
+        return
+    end
+    if self.chromieJob == "sets-use" and self.chromieSetViewName == name then
+        return
+    end
+    if self:ChromieIsSetJob() or self.chromieJob == "load" or self.chromieJob == "apply" then
+        self.chromieWantSetUse = name
+        return
+    end
+    if self.chromieWaitingForNpc then
+        self.chromieWantSetUse = name
+        self:Chat("Talk to Warpweaver to apply the set.")
+        return
+    end
+    self.chromieWantSetUse = nil
+    self.chromieJob = "sets-use"
+    self.chromieSetViewName = name
+    self.chromieSetViewPhase = nil
+    self.chromieSetUseApplied = nil
+    self.chromieSetBackSent = nil
+    self.chromieApplyClicked = nil
+    self.chromieGossipConfirmed = nil
+    ChromieTransmogFrameApplyButton:Disable()
+    self:ChromieHandleSetsUseGossip()
+end
+
+function Transmog:ChromieStartSetDelete(name)
+    if not name or self:ChromieIsSetJob() then
+        return
+    end
+    self.chromieJob = "sets-delete"
+    self.chromieSetViewName = name
+    self.chromieSetViewPhase = nil
+    self.chromieApplyClicked = nil
+    self.chromieGossipConfirmed = nil
+    self:ChromieHandleSetsDeleteGossip()
+end
+
+function Transmog:ChromieStartSetSave(name)
+    if not name or self:ChromieIsSetJob() then
+        return
+    end
+    self.chromieJob = "sets-save"
+    self.chromieSetSaveName = name
+    self.chromieSetViewPhase = nil
+    self.chromieApplyClicked = nil
+    self.chromieGossipConfirmed = nil
+    if self.setCreateFrame and self.setCreateFrame.ok then
+        self.setCreateFrame.ok:Disable()
+    end
+    if self.manageSetsFrame and self.manageSetsFrame.save then
+        self.manageSetsFrame.save:Disable()
+    end
+    self:ChromieHandleSetsSaveGossip()
+end
+
+function Transmog:ChromieStartSetsList()
+    if self:ChromieIsSetJob() or self.chromieJob == "load" or self.chromieJob == "apply" then
+        return
+    end
+    self.chromieJob = "sets-list"
+    self.chromieSetsGotList = nil
+    self:ChromieHandleSetsListGossip()
+end
+
 function Transmog:ChromieOnGossipShow()
     if not self:ChromieShouldIntercept() then
         return
@@ -874,6 +1976,7 @@ function Transmog:ChromieOnGossipShow()
     -- A new hello is in progress. Clear this before HideBlizzard or the
     -- waiting flag lets GossipFrame_OnHide CloseGossip and the click is wasted.
     self.chromieWaitingForNpc = nil
+    self.chromieSetBackSent = nil
 
     local known, npcId, guid = self:ChromieIsKnownNpc()
     self:ChromieGetOptions()
@@ -907,7 +2010,7 @@ function Transmog:ChromieOnGossipShow()
     -- Overlay must be shown before Hide(), or GossipFrame_OnHide CloseGossip kills the session.
     self:ChromieHideBlizzard()
 
-    if justOpened and not onMainMenu and self.chromieJob ~= "apply" and self.chromieJob ~= "load" then
+    if justOpened and not onMainMenu and self.chromieJob ~= "apply" and self.chromieJob ~= "load" and not self:ChromieIsSetJob() then
         if self:ChromieClickBack("open-need-main") then
             self.chromieJob = "open"
             return
@@ -922,11 +2025,37 @@ function Transmog:ChromieOnGossipShow()
             -- Selecting "Remove" again reopens the popup and errors "no transmog found".
             self.chromieApplyClicked = nil
             self:ChromieHideGossipConfirm()
-            self:ChromieFinishApply(true)
+            if self.chromieRemoveAll then
+                self:ChromieFinishRemoveAll()
+            else
+                self:ChromieFinishApply(true)
+            end
             return
         end
         self:ChromieHandleApplyGossip()
+    elseif self.chromieJob == "sets-list" then
+        self:ChromieHandleSetsListGossip()
+    elseif self.chromieJob == "sets-view" then
+        self:ChromieHandleSetsViewGossip()
+    elseif self.chromieJob == "sets-save" then
+        self:ChromieHandleSetsSaveGossip()
+    elseif self.chromieJob == "sets-price" then
+        self:ChromieHandleSetsPriceGossip()
+    elseif self.chromieJob == "sets-use" then
+        self:ChromieHandleSetsUseGossip()
+    elseif self.chromieJob == "sets-delete" then
+        self:ChromieHandleSetsDeleteGossip()
     else
+        if justOpened and onMainMenu then
+            self:ChromieStartSetsList()
+            return
+        end
+        if self.chromieWantSetUse then
+            local name = self.chromieWantSetUse
+            self.chromieWantSetUse = nil
+            self:ChromieStartSetUse(name)
+            return
+        end
         self:ChromieDumpOptions("idle")
     end
 end
@@ -974,11 +2103,11 @@ function Transmog:ChromieOnMerchantShow()
 
     -- Slot appearances as a fake vendor (.t i on / UseVendorInterface). Overlay
     -- scrape/apply is gossip-list based; warn instead of half-loading one page.
-    if self.chromieJob == "load" or self.chromieJob == "open" or self.chromieJob == "apply" then
+    if self.chromieJob == "load" or self.chromieJob == "open" or self.chromieJob == "apply" or self:ChromieIsSetJob() then
         if self.ChromieLog then
             self:ChromieLog("Vendor item list detected job=" .. tostring(self.chromieJob))
         end
-        if self.chromieJob == "load" then
+        if self.chromieJob == "load" or self:ChromieIsSetJob() then
             self.chromieJob = "open"
             self.chromieLoadEnteredSlot = nil
             ChromieTransmogFrameNoTransmogs:SetText("Vendor item list is on (.t i on).\nSwitch to .t i off, then select a slot again.")
@@ -1001,12 +2130,26 @@ function Transmog:ChromieOnGossipClosed()
     if self.chromieJob == "apply" then
         if self.chromieApplyClicked then
             self.chromieApplyClicked = nil
-            self:ChromieFinishApply(true)
+            if self.chromieRemoveAll then
+                self:ChromieFinishRemoveAll()
+            else
+                self:ChromieFinishApply(true)
+            end
+        end
+        return
+    end
+    if self.chromieJob == "sets-save" and self.chromieApplyClicked then
+        self:ChromieFinishSetSave()
+        return
+    end
+    if self.chromieJob == "sets-price" then
+        if self.ChromieLog then
+            self:ChromieLog("GOSSIP_CLOSED ignored job=sets-price")
         end
         return
     end
     -- Hiding GossipFrame used to CloseGossip and collapse the overlay mid-scrape.
-    if self.chromieJob == "load" or self.chromieJob == "probe" then
+    if self.chromieJob == "load" or self.chromieJob == "probe" or self:ChromieIsSetJob() then
         if self.ChromieLog then
             self:ChromieLog("GOSSIP_CLOSED ignored job=" .. tostring(self.chromieJob))
         end
@@ -1019,7 +2162,7 @@ end
 
 function Transmog:ChromieOpenUI()
     self:ChromieInitStatus()
-    if self.chromieJob ~= "probe" and self.chromieJob ~= "apply" and self.chromieJob ~= "load" then
+    if self.chromieJob ~= "probe" and self.chromieJob ~= "apply" and self.chromieJob ~= "load" and not self:ChromieIsSetJob() then
         self.chromieJob = "open"
     end
     ChromieTransmogFrame:Show()
@@ -1039,6 +2182,10 @@ function Transmog:ChromieEnsureSlot(slot)
         self:ChromiePublish(slot)
         return
     end
+    if self:ChromieIsSetJob() then
+        self.chromieQueuedSlot = slot
+        return
+    end
     if self.chromieJob == "load" then
         return
     end
@@ -1053,6 +2200,72 @@ function Transmog:ChromieEnsureSlot(slot)
         self:ChromieLog("EnsureSlot " .. tostring(slot) .. " starting gossip/vendor load")
     end
     self:ChromieHandleLoadGossip()
+end
+
+function Transmog:ChromieStartRemoveAll()
+    local slots = {}
+    local _, slot
+    for _, slot in pairs(self.inventorySlots) do
+        if self:ChromieSlotNeedsApply(slot) and self.transmogStatusToServer[slot] == 0 then
+            table.insert(slots, slot)
+        end
+    end
+    if not slots[1] then
+        return
+    end
+    self.chromieRemoveAll = true
+    self.chromieRemoveAllSlots = slots
+    self.chromieJob = "apply"
+    self.chromieApplySlot = nil
+    self.chromieApplyItem = 0
+    self.chromieApplyPages = 0
+    self.chromieApplyEnteredSlot = nil
+    self.chromieApplyClicked = nil
+    self.chromieGossipConfirmed = nil
+    self.chromieWaitingForNpc = nil
+    ChromieTransmogFrameApplyButton:Disable()
+    if self.ChromieLog then
+        self:ChromieLog("Remove all transmogrifications slots=" .. self:tableSize(slots))
+    end
+    if self.chromieVendorOpen then
+        self:Chat("Vendor item list is on. Switch to gossip (.t i off) to remove all at once.")
+        self.chromieRemoveAll = nil
+        self.chromieJob = "open"
+        self:calculateCost()
+        return
+    end
+    self:ChromieHandleApplyGossip()
+end
+
+function Transmog:ChromieFinishRemoveAll()
+    local slots = self.chromieRemoveAllSlots or {}
+    self.chromieRemoveAll = nil
+    self.chromieRemoveAllSlots = nil
+    self.chromieVendorOpen = nil
+    self.chromieApplyClicked = nil
+    self.chromieGossipConfirmed = true
+    self:ChromieHideGossipConfirm()
+    local i = 1
+    while slots[i] do
+        local slot = slots[i]
+        self.transmogStatusFromServer[slot] = 0
+        self.transmogStatusToServer[slot] = 0
+        self:addTransmogAnim(slot, "reset")
+        if self.ChromieForgetMog then
+            self:ChromieForgetMog(GetInventoryItemLink("player", slot))
+        end
+        i = i + 1
+    end
+    self.chromieJob = "open"
+    PlaySoundFile("Interface\\AddOns\\ChromieTransmog\\assets\\ui_transmogrify_apply.ogg", "Dialog")
+    self:transmogStatus()
+    if self.RefreshPendingGlows then
+        self:RefreshPendingGlows()
+    end
+    self:calculateCost()
+    if self.ChromieAbortMultiApply then
+        self:ChromieAbortMultiApply()
+    end
 end
 
 function Transmog:ChromieStartApply(slot, itemId)

@@ -25,10 +25,13 @@ Transmog:SetScript("OnEvent", function()
         end
         if event == "GOSSIP_CONFIRM" or event == "GOSSIP_CONFIRM_CANCEL" then
             if Transmog.ChromieLog then
-                Transmog:ChromieLog("EVENT " .. event .. " arg1=" .. tostring(arg1))
+                Transmog:ChromieLog("EVENT " .. event .. " arg1=" .. tostring(arg1) .. " arg2=" .. tostring(arg2) .. " arg3=" .. tostring(arg3))
+            end
+            if event == "GOSSIP_CONFIRM" and Transmog.ChromieOnGossipConfirm then
+                Transmog:ChromieOnGossipConfirm(arg1, arg2, arg3)
             end
             if event == "GOSSIP_CONFIRM_CANCEL" then
-                if Transmog.overlayEnabled then
+                if Transmog.overlayEnabled and Transmog.chromieJob ~= "sets-price" then
                     Transmog:ChromieHideGossipConfirm()
                 end
             end
@@ -45,7 +48,11 @@ Transmog:SetScript("OnEvent", function()
             Transmog.chromieVendorOpen = nil
             if Transmog.chromieJob == "apply" and Transmog.chromieApplyClicked then
                 Transmog.chromieApplyClicked = nil
-                Transmog:ChromieFinishApply(true)
+                if Transmog.chromieRemoveAll then
+                    Transmog:ChromieFinishRemoveAll()
+                else
+                    Transmog:ChromieFinishApply(true)
+                end
             end
             return
         end
@@ -53,7 +60,7 @@ Transmog:SetScript("OnEvent", function()
             local name = string.lower(tostring(arg1 or ""))
             if (string.find(name, "helm", 1, true) or string.find(name, "cloak", 1, true))
                 and ChromieTransmogFrame and ChromieTransmogFrame:IsShown() then
-                Transmog:RefreshPreviewModel()
+                Transmog:PreviewRedress(0)
             end
             return
         end
@@ -62,7 +69,7 @@ Transmog:SetScript("OnEvent", function()
             twfdebug(event)
 
             -- Visible-item updates from hide/remove must not revert overlay state.
-            if Transmog.chromieJob == "apply" or Transmog.chromieJob == "load" or Transmog.chromieApplyClicked then
+            if Transmog.chromieJob == "apply" or Transmog.chromieJob == "load" or Transmog.chromieApplyClicked or (Transmog.ChromieIsSetJob and Transmog:ChromieIsSetJob()) then
                 return
             end
 

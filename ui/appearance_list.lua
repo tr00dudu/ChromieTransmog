@@ -367,7 +367,10 @@ function Transmog:renderAvailableTransmogs(slot, itemClass)
             model:Undress()
 
             if self.currentTransmogSlot == self.inventorySlots['SecondaryHandSlot'] then
-                ChromieTransmogFramePlayerModel:TryOn(self.equippedItems[self.inventorySlots['MainHandSlot']])
+                local mh = self.equippedItems[self.inventorySlots['MainHandSlot']]
+                if mh then
+                    model:TryOn(mh)
+                end
             end
 
             if item.id ~= Transmog.HIDDEN_ITEM_ID then
