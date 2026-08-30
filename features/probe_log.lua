@@ -4,7 +4,7 @@ local MAX_LOG = 50000
 local PROBE_TIMEOUT = 1.5
 
 function Transmog:ChromieLogActive()
-    return self.logEnabled or self.probeActive
+    return self.logDevEnabled and (self.logEnabled or self.probeActive)
 end
 
 function Transmog:ChromieLogShow()
@@ -120,8 +120,11 @@ function Transmog:ChromieLogClear()
     self:ChromieLog("log cleared")
 end
 
-function Transmog:ChromieLog(line)
-    if not self:ChromieLogActive() then
+function Transmog:ChromieLog(line, force)
+    if not self.logDevEnabled then
+        return
+    end
+    if not force and not self:ChromieLogActive() then
         return
     end
     if not self.logEdit then
@@ -154,6 +157,9 @@ function Transmog:ChromieSafe(fn, fallback)
 end
 
 function Transmog:ChromieLogSnapshot(reason)
+    if self.chromieJob == "cache-sync" and not self.probeActive then
+        return
+    end
     if not self:ChromieLogActive() then
         return
     end

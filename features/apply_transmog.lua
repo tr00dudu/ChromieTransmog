@@ -1,43 +1,9 @@
 local Transmog = _G.ChromieTransmog
 local ChromieTransmogFrame_Find = string.find
-local ChromieTransmogFrame_ToNumber = tonumber
 
 -- Updates the UI to reflect current transmog status from the server.
 function Transmog:transmogStatus()
 	twfdebug("TransmogStatus")
-
-    for InventorySlotId, itemID in pairs(self.transmogStatusFromServer) do
-		if itemID ~= 0 then
-
-            if itemID == Transmog.HIDDEN_ITEM_ID then
-				if GetInventoryItemLink('player', InventorySlotId) then
-					local _, _, eqItemLink = ChromieTransmogFrame_Find(GetInventoryItemLink('player', InventorySlotId), "(item:%d+:%d+:%d+:%d+)");
-					local eName = GetItemInfo(eqItemLink)
-					self.equippedTransmogs[eName] = "(Hidden)"
-				end
-			elseif itemID == Transmog.UNKNOWN_MOG_ID then
-				if GetInventoryItemLink('player', InventorySlotId) then
-					local _, _, eqItemLink = ChromieTransmogFrame_Find(GetInventoryItemLink('player', InventorySlotId), "(item:%d+:%d+:%d+:%d+)");
-					local eName = GetItemInfo(eqItemLink)
-					self.equippedTransmogs[eName] = "(Transmogged)"
-				end
-			else
-
-				local TransmogItemName = GetItemInfo(itemID)
-
-				if TransmogItemName then
-					if GetInventoryItemLink('player', InventorySlotId) then
-						local _, _, eqItemLink = ChromieTransmogFrame_Find(GetInventoryItemLink('player', InventorySlotId), "(item:%d+:%d+:%d+:%d+)");
-						local eName = GetItemInfo(eqItemLink)
-						self.equippedTransmogs[eName] = TransmogItemName
-					end
-				else
-					twfdebug("Slot: "..InventorySlotId.. " itemID: " .. itemID)
-					self:cacheItem(itemID)
-				end
-			end
-        end
-    end
 
     -- add paperdoll textures
     for slotName, InventorySlotId in pairs(self.inventorySlots) do
@@ -90,9 +56,10 @@ function Transmog:transmogStatus()
 
                 if self.transmogStatusFromServer[InventorySlotId] and self.transmogStatusFromServer[InventorySlotId] ~= 0 then
                     getglobal(frame:GetName() .. 'BorderHi'):Show()
+                    local mogLabel = self.ChromieAppearanceLabel and self:ChromieAppearanceLabel("player", InventorySlotId)
 
                     if self.transmogStatusFromServer[InventorySlotId] == Transmog.HIDDEN_ITEM_ID then
-                        AddButtonOnEnterTooltipFashion(frame, eqItemLink, "(Hidden)", true)
+                        AddButtonOnEnterTooltipFashion(frame, eqItemLink, mogLabel or "(Hidden)", true)
 
                         local emptyTexture = string.lower(ChromieTransmogFrame_Explode(slotName, 'Slot')[1])
                         if emptyTexture == 'wrist' then
@@ -103,11 +70,11 @@ function Transmog:transmogStatus()
                         end
                         getglobal(frame:GetName() .. 'ItemIcon'):SetTexture('Interface\\Paperdoll\\ui-paperdoll-slot-' .. emptyTexture)
                     elseif self.transmogStatusFromServer[InventorySlotId] == Transmog.UNKNOWN_MOG_ID then
-                        AddButtonOnEnterTooltipFashion(frame, eqItemLink, "(Transmogged)", true)
+                        AddButtonOnEnterTooltipFashion(frame, eqItemLink, mogLabel or "(Transmogged)", true)
                         local gossipIcon = self.transmogGossipIcon and self.transmogGossipIcon[InventorySlotId]
                         getglobal(frame:GetName() .. 'ItemIcon'):SetTexture(gossipIcon or "Interface\\Icons\\INV_Misc_QuestionMark")
                     else
-                        AddButtonOnEnterTooltipFashion(frame, eqItemLink, self.equippedTransmogs[itemName], true)
+                        AddButtonOnEnterTooltipFashion(frame, eqItemLink, mogLabel, true)
 
                         local _, _, _, _, _, _, _, _, _, TransmogTex = GetItemInfo(self.transmogStatusFromServer[InventorySlotId])
                         if not TransmogTex then
@@ -312,6 +279,9 @@ StaticPopupDialogs["CHROMIE_TRANSMOG_VENDOR_MODE"] = {
 
 -- Sends pending transmog changes through ChromieCraft gossip/vendor.
 function Apply_OnClick()
+    if Transmog.ChromieCacheSyncIsBlocking and Transmog:ChromieCacheSyncIsBlocking() then
+        return
+    end
     if Transmog.manageSetsOpen then
         selectTransmogSlot(-1)
     end
@@ -331,32 +301,4 @@ function Apply_OnClick()
     local costText = Transmog:ChromieCostText(copper)
     local msg = pending .. " transmogs queued. Estimated cost: " .. costText .. ".\nWarpweaver applies one slot per click. Continue?"
     StaticPopup_Show("CHROMIE_TRANSMOG_APPLY_CONFIRM", msg)
-end
-
--- Handles the server response after applying transmog changes.
-function Transmog:ApplyTransmogResult(success, data)
-
-	twfdebug("ApplyTransmogResult success: "..success)
-
-	if success == 1 then
-		for i, pair in ipairs(data) do
-			local slot = pair[1]
-			local itemID = pair[2]
-			if itemID == 0 then
-				Transmog:addTransmogAnim(slot, 'reset')
-			else
-				Transmog:addTransmogAnim(slot)
-			end
-
-			Transmog.transmogStatusFromServer[slot] = itemID
-			Transmog.transmogStatusToServer[slot] = itemID
-        end
-
-        Transmog:RefreshPendingGlows()
-        Transmog.pendingApplyCount = Transmog.pendingApplyCount - 1
-        if Transmog.pendingApplyCount <= 0 then
-			PlaySoundFile("Interface\\AddOns\\ChromieTransmog\\assets\\ui_transmogrify_apply.ogg", "Dialog");
-			Transmog:transmogStatus()
-		end
-	end
 end

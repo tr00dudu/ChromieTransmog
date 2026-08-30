@@ -13,7 +13,6 @@ function Transmog_OnLoad()
 
     Transmog:cacheItem(51217)
 
-    ChromieTransmogFrameInstructions:SetText("Are you tired of wearing the same armor every day?\nSelect the item you wish to change and enjoy your new stylish look.")
     ChromieTransmogFrameNoTransmogs:SetText("You have yet to uncover any kind of appearance for this item. \nThe appearance will unlock after you equip the item.")
 
     if not ChromieTransmogOutfits then
@@ -35,29 +34,12 @@ function Transmog_OnLoad()
 
     Transmog.delayedLoad:Show()
 
-    if Transmog.class == 'druid' or Transmog.class == 'paladin' or Transmog.class == 'shaman' then
+    if Transmog.ChromieShouldHideDressupSlot and Transmog:ChromieShouldHideDressupSlot("RangedSlot") then
         RangedSlot:Hide()
     end
 
-    local TWFHookSetInventoryItem = GameTooltip.SetInventoryItem
-    function GameTooltip.SetInventoryItem(self, unit, slot)
-        GameTooltip.itemLink = GetInventoryItemLink(unit, slot)
-        local ok = TWFHookSetInventoryItem(self, unit, slot)
-        if Transmog.ChromieAttachTransmogTooltip then
-            Transmog:ChromieAttachTransmogTooltip(self, unit, slot)
-        end
-        return ok
-    end
-
-    local TWFHookSetBagItem = GameTooltip.SetBagItem
-    function GameTooltip.SetBagItem(self, container, slot)
-        GameTooltip.itemLink = GetContainerItemLink(container, slot)
-        _, GameTooltip.itemCount = GetContainerItemInfo(container, slot)
-        local ok = TWFHookSetBagItem(self, container, slot)
-        if Transmog.ChromieAttachTransmogTooltip then
-            Transmog:ChromieAttachTransmogTooltip(self, nil, nil, GameTooltip.itemLink)
-        end
-        return ok
+    if Transmog.ChromieInstallTooltipHooks then
+        Transmog:ChromieInstallTooltipHooks()
     end
 
 	twfdebug("Transmog_OnLoad end")
@@ -65,8 +47,13 @@ end
 
 -- Sends initial data requests to the server after the delayed load timer fires.
 function Transmog:LoadOnce()
-
 	twfdebug("LoadOnce")
+    if self.ChromiePersistLoadSets then
+        self:ChromiePersistLoadSets()
+    end
+    if self.ChromieHydrateAppliedFromPersist then
+        self:ChromieHydrateAppliedFromPersist()
+    end
     self:ChromieInitStatus()
 end
 
@@ -83,7 +70,18 @@ function ChromieTransmogFrame_OnShow()
 
     Transmog:Reset()
 
+    if Transmog.ChromieCacheSyncMaybePrompt then
+        Transmog:ChromieCacheSyncMaybePrompt()
+    end
+
 	Transmog:hideItems(false)
+
+    if not Transmog.chromieJob or Transmog.chromieJob == "open" then
+        Transmog.chromieJob = "open"
+    end
+    if Transmog.ChromieEnqueueUnknownMogScans then
+        Transmog:ChromieEnqueueUnknownMogScans()
+    end
 
     ChromieTransmogFramePlayerModel:SetScript('OnMouseUp', function(self)
         ChromieTransmogFramePlayerModel:SetScript('OnUpdate', nil)
@@ -130,7 +128,18 @@ function Transmog_OnHide()
     if Transmog.ChromieAbortMultiApply then
         Transmog:ChromieAbortMultiApply()
     end
+    if Transmog.ChromieCacheSyncStop then
+        Transmog:ChromieCacheSyncStop()
+    elseif Transmog.ChromieCacheSyncHidePanel then
+        Transmog:ChromieCacheSyncHidePanel()
+    end
+    Transmog.chromieScanQueue = nil
+    Transmog.chromieSessionScanned = nil
+    if StaticPopup_Hide then
+        StaticPopup_Hide("CHROMIE_TRANSMOG_CACHE_SYNC")
+    end
     Transmog.chromieJob = nil
+    Transmog.cacheWarnedIncomplete = nil
     if Transmog.skipCloseOnHide then
         twfdebug("Transmog_OnHide skip close")
         PlaySound("igCharacterInfoClose");
@@ -196,6 +205,12 @@ function Transmog:Reset(once)
     self.currentTransmogSlotName = nil
     self.currentTransmogItemClass = nil
 
+    if self.ChromieHydrateFromApplied then
+        self:ChromieHydrateFromApplied()
+    end
+    if self.PreviewCacheInit then
+        self:PreviewCacheInit()
+    end
     self:PreviewRedress(0)
 
     Transmog_switchTab(self.tab ~= "" and self.tab or "items")

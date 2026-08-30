@@ -71,14 +71,37 @@ function Transmog:PreviewShowsCloak()
     return GetCVar("showCloak") == "1"
 end
 
--- Player dummy dress API:
---   PreviewRedress(delay)  — full rebuild: SetUnit("player") then pending diffs
---   PreviewChangeSlot(slot) — TryOn / hide one slot from transmogStatusToServer
---   PreviewTryOn / PreviewHideSlot — primitives; do not SetUnit here
--- Grid thumbnails (TransmogLookN ItemModel) are separate; never dress those here.
+-- Player dummy (DressUpModel):
+--   open / set-apply / revert -> SetUnit("player") once
+--   pending pick / reset to an item -> TryOn that slot only
+--   pending hide -> Undress + TryOn cache (UndressSlot is a no-op on Chromie)
+-- Grid thumbnails (TransmogLookN) stay a separate widget.
 
--- Dress one piece onto the player dummy. itemId 0 / hidden / unknown are no-ops.
 function Transmog:PreviewTryOn(itemId, slot)
+    if self.ChromieDbg then
+        local why
+        if itemId == nil then
+            why = "skip nil dressId (no mog item id in cache)"
+        elseif itemId == 0 then
+            why = "skip 0"
+        elseif itemId == self.HIDDEN_ITEM_ID then
+            why = "skip hidden sentinel"
+        elseif itemId == self.UNKNOWN_MOG_ID then
+            why = "skip UNKNOWN -1 (gossip never sent this mog's item id)"
+        elseif slot == 1 and not self:PreviewShowsHelm() then
+            why = "skip helm-cvar"
+        elseif slot == 15 and not self:PreviewShowsCloak() then
+            why = "skip cloak-cvar"
+        else
+            why = "TryOn " .. (self.ChromieItemLabel and self:ChromieItemLabel(itemId) or tostring(itemId))
+        end
+        self:ChromieDbg("dress " .. (self.ChromieSlotLabel and self:ChromieSlotLabel(slot) or tostring(slot))
+            .. " " .. why
+            .. " applied=" .. (self.ChromieItemLabel and self:ChromieItemLabel(self.applied and self.applied[slot]) or tostring(self.applied and self.applied[slot]))
+            .. " saved=" .. (self.ChromieItemLabel and self:ChromieItemLabel(self.ChromiePersistGetApplied and self:ChromiePersistGetApplied(slot)) or "?")
+            .. " shown=" .. (self.ChromieItemLabel and self:ChromieItemLabel(self.previewShown and self.previewShown[slot]) or "?")
+            .. " want=" .. (self.ChromieItemLabel and self:ChromieItemLabel(self.transmogStatusToServer and self.transmogStatusToServer[slot]) or "?"))
+    end
     if not itemId or itemId == 0 or itemId == self.HIDDEN_ITEM_ID or itemId == self.UNKNOWN_MOG_ID then
         return
     end
@@ -101,72 +124,254 @@ function Transmog:PreviewTryOn(itemId, slot)
     end
 end
 
--- Hide one slot on the dummy. Do not call in the same frame as SetUnit.
-function Transmog:PreviewHideSlot(slot, model)
-    model = model or ChromieTransmogFramePlayerModel
-    if not model or not slot then
-        return false
+function Transmog:PreviewCacheIdFromServer(slot)
+    local have = self.transmogStatusFromServer[slot]
+    if have == self.HIDDEN_ITEM_ID then
+        return self.HIDDEN_ITEM_ID
     end
-    local slotName
-    local name, id
-    for name, id in pairs(self.inventorySlots) do
-        if id == slot then
-            slotName = name
-            break
-        end
+    if have and have > 1 then
+        return have
     end
-    local invSlot = slot
-    if slotName then
-        local info = GetInventorySlotInfo(slotName)
-        if info then
-            invSlot = info
-        end
+    local applied = self.ChromiePersistGetApplied and self:ChromiePersistGetApplied(slot)
+    if applied == self.HIDDEN_ITEM_ID then
+        return self.HIDDEN_ITEM_ID
     end
-    local ok = pcall(function()
-        model:UndressSlot(invSlot)
-    end)
-    if not ok and invSlot ~= slot then
-        ok = pcall(function()
-            model:UndressSlot(slot)
-        end)
+    if applied and applied > 1 then
+        return applied
     end
-    return ok
+    if have == self.UNKNOWN_MOG_ID or applied == self.UNKNOWN_MOG_ID then
+        return self.UNKNOWN_MOG_ID
+    end
+    return self.equippedItems[slot] or 0
 end
 
--- Change/hide only this slot to match transmogStatusToServer[slot].
--- Hide cannot TryOn; UndressSlot is discarded unless it runs after SetUnit.
-function Transmog:PreviewChangeSlot(slot)
-    if not slot then
-        return
-    end
+function Transmog:PreviewCacheIdFromWant(slot)
     local want = self.transmogStatusToServer[slot]
     if want == self.HIDDEN_ITEM_ID then
-        self:PreviewRedress(0)
-        return
+        return self.HIDDEN_ITEM_ID
     end
     if want == 0 then
-        self:PreviewTryOn(self.equippedItems[slot], slot)
-        return
+        return self.equippedItems[slot] or 0
     end
-    self:PreviewTryOn(want, slot)
+    if want and want > 1 then
+        return want
+    end
+    return self:PreviewCacheIdFromServer(slot)
 end
 
-function Transmog:PreviewVisibleItem(slot)
-    local want = self.transmogStatusToServer[slot]
-    local have = self.transmogStatusFromServer[slot]
-    if want == self.HIDDEN_ITEM_ID then
+function Transmog:PreviewDressId(slot)
+    local want = self.transmogStatusToServer and self.transmogStatusToServer[slot]
+    local shown = self.previewShown and self.previewShown[slot]
+    if want == self.HIDDEN_ITEM_ID or shown == self.HIDDEN_ITEM_ID then
         return nil
     end
     if want and want > 1 then
         return want
     end
+    if want == 0 then
+        return self.equippedItems[slot]
+    end
+    if shown and shown > 1 then
+        local equipped = self.equippedItems and self.equippedItems[slot]
+        if shown ~= equipped then
+            return shown
+        end
+    end
+    local applied = self.ChromiePersistGetApplied and self:ChromiePersistGetApplied(slot)
+    if applied and applied > 1 then
+        return applied
+    end
+    local have = self.transmogStatusFromServer and self.transmogStatusFromServer[slot]
     if have and have > 1 then
         return have
     end
     return self.equippedItems[slot]
 end
 
-function Transmog:PreviewDressVisibleSlots(hideSlots)
+function Transmog:PreviewFillShownFromApplied()
+    if not self.previewShown then
+        self:PreviewCacheInit()
+        return
+    end
+    local _, slot
+    for _, slot in pairs(self.inventorySlots) do
+        local shown = self.previewShown[slot]
+        local want = self.transmogStatusToServer and self.transmogStatusToServer[slot]
+        if want == self.HIDDEN_ITEM_ID then
+            self.previewShown[slot] = self.HIDDEN_ITEM_ID
+        elseif shown == nil or shown == self.UNKNOWN_MOG_ID then
+            self.previewShown[slot] = self:PreviewCacheIdFromWant(slot)
+        else
+            local applied = self.applied and self.applied[slot]
+            local equipped = self.equippedItems and self.equippedItems[slot]
+            if applied and applied > 1 and shown == equipped and want ~= 0 then
+                self.previewShown[slot] = applied
+            end
+        end
+    end
+end
+
+function Transmog:PreviewCacheInit()
+    if not self.previewShown then
+        self.previewShown = {}
+    end
+    if not self.previewBaseline then
+        self.previewBaseline = {}
+    end
+    local _, slot
+    for _, slot in pairs(self.inventorySlots) do
+        self.previewBaseline[slot] = self:PreviewCacheIdFromServer(slot)
+        self.previewShown[slot] = self:PreviewCacheIdFromWant(slot)
+    end
+end
+
+function Transmog:PreviewCacheCommit(slot, itemId)
+    if not slot then
+        return
+    end
+    local id
+    if itemId == 0 then
+        id = self.equippedItems[slot] or 0
+    else
+        id = itemId
+    end
+    if not self.previewShown then
+        self.previewShown = {}
+    end
+    if not self.previewBaseline then
+        self.previewBaseline = {}
+    end
+    self.previewBaseline[slot] = id
+    self.previewShown[slot] = id
+    if self.ChromieAppliedSet then
+        self:ChromieAppliedSet(slot, itemId)
+    end
+end
+
+function Transmog:PreviewHasHidden()
+    if not self.previewShown then
+        return false
+    end
+    local _, slot
+    for _, slot in pairs(self.inventorySlots) do
+        if self.previewShown[slot] == self.HIDDEN_ITEM_ID then
+            return true
+        end
+    end
+    return false
+end
+
+function Transmog:PreviewShowPlayer(delay)
+    delay = tonumber(delay) or 0
+    if delay < 0 then
+        delay = 0
+    end
+    if not ChromieTransmogFramePlayerModel then
+        return
+    end
+    if self.previewRedressFrame then
+        self.previewRedressFrame:Hide()
+    end
+    if delay == 0 then
+        if self.ChromieDbg then
+            self:ChromieDbg("dress SetUnit(player)")
+        end
+        ChromieTransmogFramePlayerModel:SetUnit("player")
+        return
+    end
+    if not self.previewRedressFrame then
+        local f = CreateFrame("Frame", nil, UIParent)
+        f:Hide()
+        f:SetScript("OnUpdate", function()
+            this.n = (this.n or 0) + 1
+            if this.n >= (this.delay or 0) + 1 then
+                this:Hide()
+                if ChromieTransmogFramePlayerModel then
+                    if Transmog.ChromieDbg then
+                        Transmog:ChromieDbg("dress SetUnit(player) delayed")
+                    end
+                    ChromieTransmogFramePlayerModel:SetUnit("player")
+                end
+            end
+        end)
+        self.previewRedressFrame = f
+    end
+    local f = self.previewRedressFrame
+    f.delay = delay
+    f.n = 0
+    f:Show()
+end
+
+function Transmog:PreviewSlotHasPendingChange(slot)
+    if not slot then
+        return false
+    end
+    local want = self.transmogStatusToServer and self.transmogStatusToServer[slot]
+    local have = self.transmogStatusFromServer and self.transmogStatusFromServer[slot]
+    if want == nil then
+        return false
+    end
+    return want ~= (have or 0)
+end
+
+function Transmog:PreviewShouldDressRanged()
+    if not self.ChromieSlotSupportsTransmog or not self:ChromieSlotSupportsTransmog(18) then
+        return false
+    end
+    return self:PreviewSlotHasPendingChange(18)
+end
+
+function Transmog:PreviewWeaponDressId(slot)
+    local id = self:PreviewDressId(slot)
+    if (not id or id <= 1) and self.previewShown and self.previewShown[slot] and self.previewShown[slot] > 1 then
+        id = self.previewShown[slot]
+    end
+    -- Never fall back to equipped ranged during redress; TryOn relic/bow clears weapons.
+    if slot == 18 then
+        return id
+    end
+    if (not id or id <= 1) and self.equippedItems then
+        id = self.equippedItems[slot]
+    end
+    return id
+end
+
+-- Weapons after Undress: offhand TryOn can drop main hand on Chromie DressUpModel.
+function Transmog:PreviewTryOnWeapons()
+    local mh = self:PreviewWeaponDressId(16)
+    local oh = self:PreviewWeaponDressId(17)
+    if mh and mh > 1 then
+        self:PreviewTryOn(mh, 16)
+    end
+    if oh and oh > 1 then
+        self:PreviewTryOn(oh, 17)
+    end
+    if mh and mh > 1 then
+        self:PreviewTryOn(mh, 16)
+    end
+    if self:PreviewShouldDressRanged() then
+        local rg = self:PreviewWeaponDressId(18)
+        if rg and rg > 1 then
+            self:PreviewTryOn(rg, 18)
+        end
+    end
+end
+
+-- Full undress + cache TryOn. Only for hide (or restack when a slot is hidden).
+function Transmog:PreviewRebuild()
+    local model = ChromieTransmogFramePlayerModel
+    if not model then
+        return
+    end
+    if not self.previewShown then
+        self:PreviewCacheInit()
+    else
+        self:PreviewFillShownFromApplied()
+    end
+    if self.previewRedressFrame then
+        self.previewRedressFrame:Hide()
+    end
+    model:Undress()
     local extra = { 4, 19 }
     local i
     for i = 1, 2 do
@@ -176,107 +381,128 @@ function Transmog:PreviewDressVisibleSlots(hideSlots)
             self:PreviewTryOn(id, extra[i])
         end
     end
-    local _, slot
-    for _, slot in pairs(self.inventorySlots) do
-        if not (hideSlots and hideSlots[slot]) then
-            self:PreviewTryOn(self:PreviewVisibleItem(slot), slot)
-        end
+    local order = self.previewArmorOrder or { 1, 3, 5, 6, 7, 8, 9, 10, 15 }
+    i = 1
+    while order[i] do
+        self:PreviewTryOn(self:PreviewDressId(order[i]), order[i])
+        i = i + 1
     end
+    self:PreviewTryOnWeapons()
 end
 
--- After SetUnit has settled: pending hide / TryOn only.
--- Already-applied mogs and hides come from SetUnit. Do not Undress() after
--- SetUnit — UNKNOWN_MOG slots would TryOn equipped and strip every other mog.
-function Transmog:PreviewApplyDiffs()
-    local model = ChromieTransmogFramePlayerModel
-    if not model then
+function Transmog:PreviewRebuildFromCache()
+    self:PreviewRebuild()
+end
+
+-- Live unit, then overlay pending known ids. Used when a slot must return to an
+-- unknown applied mog (no item id) without dropping other pending TryOns.
+function Transmog:PreviewRestack()
+    if self:PreviewHasHidden() then
+        self:PreviewRebuild()
         return
     end
-
-    local _, slot
-    for _, slot in pairs(self.inventorySlots) do
-        local want = self.transmogStatusToServer[slot]
-        local have = self.transmogStatusFromServer[slot]
-        if want ~= have then
-            if want == self.HIDDEN_ITEM_ID then
-                self:PreviewHideSlot(slot, model)
-            elseif want == 0 then
-                self:PreviewTryOn(self.equippedItems[slot], slot)
-            elseif want and want > 1 then
-                self:PreviewTryOn(want, slot)
-            end
+    self:PreviewShowPlayer(0)
+    if not self.previewShown then
+        return
+    end
+    local order = self.previewArmorOrder or { 1, 3, 5, 6, 7, 8, 9, 10, 15 }
+    local i = 1
+    while order[i] do
+        local slot = order[i]
+        local id = self.previewShown[slot]
+        if id and id > 1 then
+            self:PreviewTryOn(id, slot)
         end
+        i = i + 1
+    end
+    self:PreviewTryOnWeapons()
+end
+
+function Transmog:PreviewApplySlot(slot)
+    if not slot then
+        return
+    end
+    if not self.previewShown then
+        self:PreviewCacheInit()
+    end
+    local id = self.previewShown[slot]
+    if id == self.HIDDEN_ITEM_ID then
+        self:PreviewRebuild()
+        return
+    end
+    if id == self.UNKNOWN_MOG_ID then
+        self:PreviewRestack()
+        return
+    end
+    if not id or id == 0 then
+        id = self.equippedItems[slot] or 0
+    end
+    if id and id > 1 then
+        self:PreviewTryOn(id, slot)
+        return
     end
 end
 
-local function previewSetUnit()
-    if ChromieTransmogFramePlayerModel then
-        ChromieTransmogFramePlayerModel:SetUnit("player")
+function Transmog:PreviewChangeSlot(slot)
+    if not slot then
+        return
     end
+    if not self.previewShown then
+        self:PreviewCacheInit()
+    else
+        self:PreviewFillShownFromApplied()
+    end
+    self.previewShown[slot] = self:PreviewCacheIdFromWant(slot)
+    self:PreviewApplySlot(slot)
 end
 
--- Completely redress the player dummy: current applied mogs (SetUnit) plus
--- anything pending in transmogStatusToServer. delay = extra frames before
--- SetUnit (use after the server has just changed the unit's appearance).
+function Transmog:PreviewUndoOrResetSlot(slot)
+    if not slot then
+        return
+    end
+    if not self.previewShown then
+        self:PreviewCacheInit()
+    end
+    local have = self.transmogStatusFromServer[slot] or 0
+    local want = self.transmogStatusToServer[slot]
+    if want ~= have then
+        self.transmogStatusToServer[slot] = have
+        self.previewShown[slot] = self.previewBaseline[slot] or self:PreviewCacheIdFromServer(slot)
+    else
+        self.transmogStatusToServer[slot] = 0
+        self.previewShown[slot] = self.equippedItems[slot] or 0
+    end
+    self:PreviewApplySlot(slot)
+end
+
+-- Show the live character. Not a full Undress rebuild.
 function Transmog:PreviewRedress(delay)
-    delay = tonumber(delay) or 0
-    if delay < 0 then
-        delay = 0
-    end
-    if self.previewSetUnitFrame then
-        self.previewSetUnitFrame:Hide()
-    end
-    if self.previewApplyFrame then
-        self.previewApplyFrame:Hide()
-    end
-    if not self.previewRedressFrame then
-        local f = CreateFrame("Frame", nil, UIParent)
-        f:Hide()
-        f:SetScript("OnUpdate", function()
-            this.n = (this.n or 0) + 1
-            if not this.didSetUnit and this.n >= (this.delay or 0) + 1 then
-                previewSetUnit()
-                this.didSetUnit = true
-                this.setAt = this.n
-                if not Transmog:ChromieHasPending() then
-                    this:Hide()
-                    return
-                end
-            end
-            -- SetUnit dresses asynchronously; diffs the same frame are discarded.
-            if not this.didSetUnit or this.n < (this.setAt or 0) + 3 then
-                return
-            end
-            this:Hide()
-            Transmog:PreviewApplyDiffs()
-        end)
-        self.previewRedressFrame = f
-    end
-    local f = self.previewRedressFrame
-    f.delay = delay
-    f.n = 0
-    f.didSetUnit = nil
-    f.setAt = nil
-    f:Hide()
-    -- Same-frame SetUnit is what used to work for Reset / overlay open.
-    if delay == 0 then
-        previewSetUnit()
-        f.didSetUnit = true
-        f.setAt = 0
-        if not self:ChromieHasPending() then
-            return
-        end
-    end
-    f:Show()
+    self:PreviewShowPlayer(delay)
 end
 
 function Transmog:RefreshPreviewModel()
-    self:PreviewRedress(0)
+    self:PreviewShowPlayer(0)
+end
+
+function Transmog:PreviewSlotIcon(itemId, slot)
+    if not itemId or itemId == 0 or itemId == self.HIDDEN_ITEM_ID then
+        return nil
+    end
+    if itemId == self.UNKNOWN_MOG_ID then
+        return self.transmogGossipIcon and self.transmogGossipIcon[slot]
+    end
+    self:cacheItem(itemId)
+    local _, _, _, _, _, _, _, _, _, tex = GetItemInfo(itemId)
+    return tex
 end
 
 -- Previews a transmog appearance on the selected equipment slot.
 function Transmog_Try(itemId, slotName, newReset)
 	twfdebug("Transmog_Try itemID: " .. itemId .. "slotName: " .. slotName)
+
+    if Transmog.ChromieCacheSyncIsBlocking and Transmog:ChromieCacheSyncIsBlocking() then
+        return
+    end
 
     if newReset and getglobal(slotName .. "NoEquip"):IsVisible() then
         return false
@@ -287,9 +513,7 @@ function Transmog_Try(itemId, slotName, newReset)
     if newReset then
         local InventorySlotId = Transmog.inventorySlots[slotName]
 
-        itemId = Transmog:IDFromLink(GetInventoryItemLink('player', InventorySlotId))
-
-        Transmog.transmogStatusToServer[InventorySlotId] = 0
+        Transmog:PreviewUndoOrResetSlot(InventorySlotId)
 
         getglobal(slotName .. 'AutoCast'):Hide()
 
@@ -301,19 +525,11 @@ function Transmog_Try(itemId, slotName, newReset)
         end
         Transmog:UpdateSlotGlow(slotName, InventorySlotId)
 
-        Transmog:PreviewChangeSlot(InventorySlotId)
-
-        Transmog:cacheItem(itemId)
-        local _, _, _, _, _, _, _, _, _, tex = GetItemInfo(itemId)
-
+        local shown = Transmog.previewShown[InventorySlotId]
+        local tex = Transmog:PreviewSlotIcon(shown, InventorySlotId)
         getglobal(slotName .. "ItemIcon"):SetTexture(tex or "Interface\\Icons\\INV_Misc_QuestionMark")
 
         AddButtonOnEnterTooltipFashion(getglobal(slotName), GetInventoryItemLink('player', InventorySlotId))
-
-        local _, _, eqItemLink = ChromieTransmogFrame_Find(GetInventoryItemLink('player', InventorySlotId), "(item:%d+:%d+:%d+:%d+)");
-        local eName = GetItemInfo(eqItemLink)
-
-        Transmog.equippedTransmogs[eName] = nil
 
         Transmog:calculateCost()
         Transmog:EnableOutfitSaveButton()
@@ -321,12 +537,25 @@ function Transmog_Try(itemId, slotName, newReset)
         return true
     end
 
-    if itemId == Transmog:IDFromLink(GetInventoryItemLink('player', Transmog.currentTransmogSlot)) then
-        getglobal(Transmog.currentTransmogSlotName .. 'BorderHi'):Hide()
-        Transmog.transmogStatusToServer[Transmog.currentTransmogSlot] = 0
+    local equippedId = Transmog:IDFromLink(GetInventoryItemLink('player', Transmog.currentTransmogSlot))
+    if itemId == equippedId then
+        Transmog:PreviewUndoOrResetSlot(Transmog.currentTransmogSlot)
+        itemId = Transmog.previewShown[Transmog.currentTransmogSlot]
+        if Transmog.transmogStatusToServer[Transmog.currentTransmogSlot] == Transmog.transmogStatusFromServer[Transmog.currentTransmogSlot] then
+            getglobal(Transmog.currentTransmogSlotName .. 'BorderHi'):Hide()
+        else
+            getglobal(Transmog.currentTransmogSlotName .. 'BorderHi'):Show()
+        end
     else
         getglobal(Transmog.currentTransmogSlotName .. 'BorderHi'):Show()
         Transmog.transmogStatusToServer[Transmog.currentTransmogSlot] = itemId
+        if itemId and itemId > 1 and Transmog.ChromieCacheKeyForSlot and Transmog.ChromieUnlockMergeId then
+            local key = Transmog:ChromieCacheKeyForSlot(Transmog.currentTransmogSlot)
+            if key then
+                Transmog:ChromieUnlockMergeId(key, itemId, nil)
+            end
+        end
+        Transmog:PreviewChangeSlot(Transmog.currentTransmogSlot)
     end
 
     Transmog:UpdateSlotGlow(Transmog.currentTransmogSlotName, Transmog.currentTransmogSlot)
@@ -344,16 +573,7 @@ function Transmog_Try(itemId, slotName, newReset)
         getglobal(Transmog.currentTransmogSlotName .. 'AutoCast'):SetAlpha(0.3)
     end
 
-    Transmog:PreviewChangeSlot(Transmog.currentTransmogSlot)
-
-    local tex
-    if itemId == Transmog.HIDDEN_ITEM_ID then
-        tex = nil
-    else
-        Transmog:cacheItem(itemId)
-        local _
-        _, _, _, _, _, _, _, _, _, tex = GetItemInfo(itemId)
-    end
+    local tex = Transmog:PreviewSlotIcon(itemId, Transmog.currentTransmogSlot)
 
     twfdebug("Transmog_Try itemIcon target: [" .. tostring(Transmog.currentTransmogSlotName) .. "ItemIcon] tex: " .. tostring(tex))
     getglobal(Transmog.currentTransmogSlotName .. "ItemIcon"):SetTexture(tex or "Interface\\Icons\\INV_Misc_QuestionMark")
@@ -405,6 +625,27 @@ function selectTransmogSlot(InventorySlotId, slotName)
 
 	twfdebug("selectTransmogSlot slot: " .. InventorySlotId)
 
+    if Transmog.ChromieCacheSyncIsBlocking and Transmog:ChromieCacheSyncIsBlocking() then
+        return
+    end
+
+    -- Leaving Cache tab via dress-up slot click closes the cache report.
+    if Transmog.tab == "cache" and InventorySlotId ~= -1 then
+        Transmog.tab = "items"
+        if Transmog.ChromieCacheTabHide then
+            Transmog:ChromieCacheTabHide()
+        end
+        if ChromieTransmogFrameItemsButton then
+            ChromieTransmogFrameItemsButtonText:SetText(HIGHLIGHT_FONT_COLOR_CODE .. "Items")
+        end
+        if ChromieTransmogFrameSetsButton then
+            ChromieTransmogFrameSetsButtonText:SetText(FONT_COLOR_CODE_CLOSE .. "Sets")
+        end
+        if ChromieTransmogFrameCacheButton then
+            ChromieTransmogFrameCacheButtonText:SetText(FONT_COLOR_CODE_CLOSE .. "Cache")
+        end
+    end
+
     ChromieTransmogFrameNoTransmogs:Hide()
 
     if Transmog.ChromieHideManageSets then
@@ -417,9 +658,7 @@ function selectTransmogSlot(InventorySlotId, slotName)
         Transmog:hideItems(true)
         Transmog:hideItemBorders()
         Transmog:hidePagination()
-        ChromieTransmogFrameSplash:Show()
-        ChromieTransmogFrameInstructions:Show()
-        ChromieTransmogFrameCollected:Hide()
+        ChromieTransmogFrameCollectedText:Hide()
         Transmog.currentTransmogSlotName = nil
         Transmog.currentTransmogSlot = nil
 		Transmog.currentTransmogItemClass = nil
@@ -427,6 +666,10 @@ function selectTransmogSlot(InventorySlotId, slotName)
     end
 
     if getglobal(slotName .. "NoEquip"):IsVisible() then
+        return false
+    end
+
+    if Transmog.ChromieSlotSupportsTransmog and not Transmog:ChromieSlotSupportsTransmog(InventorySlotId) then
         return false
     end
 
@@ -446,8 +689,6 @@ function selectTransmogSlot(InventorySlotId, slotName)
     local itemName, _, _, _, _, itemClass, itemSubclass, _, invType = GetItemInfo(eqItemLink)
 
     local eqItemId = Transmog:IDFromLink(eqItemLink)
-
-    Transmog:PreviewRedress(0)
 
     Transmog:hideItems(false)
     Transmog:hidePlayerItemsBorders()
@@ -486,6 +727,9 @@ end
 -- Reverts all pending transmog edits, discarding un-applied changes.
 -- Does not send gossip or clear applied mogs on the character.
 function Transmog_revert()
+    if Transmog.ChromieCacheSyncIsBlocking and Transmog:ChromieCacheSyncIsBlocking() then
+        return
+    end
     if Transmog.ChromieAbortMultiApply then
         Transmog:ChromieAbortMultiApply()
     end
@@ -521,21 +765,57 @@ function Transmog_resetAllSlots()
     Transmog_revert()
 end
 
--- Switches between the items and outfits tabs.
+-- Switches between Items, Sets, and Cache tabs.
 function Transmog_switchTab(to)
 
 	twfdebug("Transmog_switchTab " .. to)
 
     Transmog.tab = to
-    if to == 'items' then
-        ChromieTransmogFrameItemsButton:SetNormalTexture('Interface\\AddOns\\ChromieTransmog\\assets\\tab_active')
-        ChromieTransmogFrameItemsButton:SetPushedTexture('Interface\\AddOns\\ChromieTransmog\\assets\\tab_active')
-        ChromieTransmogFrameItemsButtonText:SetText(HIGHLIGHT_FONT_COLOR_CODE .. 'Items')
 
+    if ChromieTransmogFrameItemsButton then
+        ChromieTransmogFrameItemsButtonText:SetText(FONT_COLOR_CODE_CLOSE .. 'Items')
+    end
+    if ChromieTransmogFrameSetsButton then
+        ChromieTransmogFrameSetsButtonText:SetText(FONT_COLOR_CODE_CLOSE .. 'Sets')
+    end
+    if ChromieTransmogFrameCacheButton then
+        ChromieTransmogFrameCacheButtonText:SetText(FONT_COLOR_CODE_CLOSE .. 'Cache')
+    end
+
+    if Transmog.ChromieHideManageSets then
+        Transmog:ChromieHideManageSets()
+    end
+    if Transmog.ChromieCacheTabHide then
+        Transmog:ChromieCacheTabHide()
+    end
+    Transmog:hideItems(true)
+    Transmog:hidePagination()
+    ChromieTransmogFrameNoTransmogs:Hide()
+    ChromieTransmogFrameCollectedText:Hide()
+
+    if to == 'items' then
+        if ChromieTransmogFrameItemsButton then
+            ChromieTransmogFrameItemsButtonText:SetText(HIGHLIGHT_FONT_COLOR_CODE .. 'Items')
+        end
+        Transmog:hideItems(false)
         if Transmog.currentTransmogSlot ~= nil then
             selectTransmogSlot(Transmog.currentTransmogSlot, Transmog.currentTransmogSlotName)
         else
             selectTransmogSlot(-1)
+        end
+    elseif to == 'sets' then
+        if ChromieTransmogFrameSetsButton then
+            ChromieTransmogFrameSetsButtonText:SetText(HIGHLIGHT_FONT_COLOR_CODE .. 'Sets')
+        end
+        if Transmog.ChromieShowManageSets then
+            Transmog:ChromieShowManageSets()
+        end
+    elseif to == 'cache' then
+        if ChromieTransmogFrameCacheButton then
+            ChromieTransmogFrameCacheButtonText:SetText(HIGHLIGHT_FONT_COLOR_CODE .. 'Cache')
+        end
+        if Transmog.ChromieCacheTabShow then
+            Transmog:ChromieCacheTabShow()
         end
     end
 end

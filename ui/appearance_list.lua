@@ -2,19 +2,10 @@ local Transmog = _G.ChromieTransmog
 local ChromieTransmogFrame_Find = string.find
 local ChromieTransmogFrame_ToNumber = tonumber
 
--- Updates the collection progress bar with collected count.
+-- Updates the collection count label (text only).
 function Transmog:setProgressBar(collected, possible)
-	ChromieTransmogFrameCollectedCollectedStatus:SetText("Collected: " .. collected)
-
-	local fillBarWidth = 0;
-    ChromieTransmogFrameCollectedFillBar:SetPoint("TOPRIGHT", ChromieTransmogFrameCollected, "TOPLEFT", fillBarWidth, 0);
-    ChromieTransmogFrameCollectedFillBar:Show();
-
-    ChromieTransmogFrameCollected:SetStatusBarColor(0.0, 0.0, 0.0, 0.5);
-    ChromieTransmogFrameCollectedBackground:SetVertexColor(0.0, 0.0, 0.0, 0.5);
-    ChromieTransmogFrameCollectedFillBar:SetVertexColor(0.0, 1.0, 0.0, 0.5);
-
-    ChromieTransmogFrameCollected:Show()
+    ChromieTransmogFrameCollectedText:SetText("Collected: " .. collected)
+    ChromieTransmogFrameCollectedText:Show()
 end
 
 Transmog.availableTransmogsCacheDelay = CreateFrame("Frame")
@@ -32,64 +23,63 @@ Transmog.availableTransmogsCacheDelay:SetScript("OnUpdate", function()
     local gt = GetTime() * 1000
     local st = (this.startTime + plus) * 1000
     if gt >= st then
-
         twfdebug("delay cache: " .. Transmog.availableTransmogsCacheDelay.InventorySlotId)
         Transmog:prepareAvailableTransmogs(Transmog.availableTransmogsCacheDelay.InventorySlotId, Transmog.availableTransmogsCacheDelay.ItemClass)
-        if Transmog.currentTransmogSlot == Transmog.availableTransmogsCacheDelay.InventorySlotId then
-            Transmog:renderAvailableTransmogs(Transmog.availableTransmogsCacheDelay.InventorySlotId, Transmog.availableTransmogsCacheDelay.ItemClass)
-        end
         Transmog.availableTransmogsCacheDelay:Hide()
     end
 end)
 
 -- Processes available transmog data for a slot and item class, building the display list.
 function Transmog:prepareAvailableTransmogs(slot, itemClass)
+    twfdebug("prepareAvailableTransmogs start slot: " .. slot .. " itemClass: " .. itemClass)
 
-	twfdebug("prepareAvailableTransmogs start slot: " .. slot .. " itemClass: " .. itemClass)
-
-	if not Transmog.availableTransmogItems[slot] then
-		Transmog.availableTransmogItems[slot] = {}
-	end
+    if not Transmog.availableTransmogItems[slot] then
+        Transmog.availableTransmogItems[slot] = {}
+    end
 
     self.availableTransmogItems[slot][itemClass] = {}
 
     for i, itemID in ipairs(self.transmogDataFromServer[slot][itemClass]) do
         itemID = ChromieTransmogFrame_ToNumber(itemID)
-        local name, link, quality, level, min_level, class, subclass, _, inv_type, tex = GetItemInfo(itemID)
+        if not itemID or itemID <= 0 or itemID == self.UNKNOWN_MOG_ID then
+            -- skip gossip-only placeholders
+        else
+            local name, link, quality, level, min_level, class, subclass, _, inv_type, tex = GetItemInfo(itemID)
 
-		local eqItemLink = nil
-		local inventoryItemLink = GetInventoryItemLink('player', slot)
-		if inventoryItemLink then
-			local _, _, eqItemLink2 = ChromieTransmogFrame_Find(inventoryItemLink, "(item:%d+:%d+:%d+:%d+)");
-			eqItemLink = eqItemLink2;
-		end
+            local eqItemLink = nil
+            local inventoryItemLink = GetInventoryItemLink('player', slot)
+            if inventoryItemLink then
+                local _, _, eqItemLink2 = ChromieTransmogFrame_Find(inventoryItemLink, "(item:%d+:%d+:%d+:%d+)")
+                eqItemLink = eqItemLink2
+            end
 
-        if not name then
-            self:cacheItem(itemID);
-            twfdebug("caching item " .. itemID)
-            Transmog.availableTransmogsCacheDelay.InventorySlotId = slot
-			Transmog.availableTransmogsCacheDelay.ItemClass = itemClass
-            Transmog.availableTransmogsCacheDelay:Show()
-            return
-        end
+            if not name then
+                self:cacheItem(itemID)
+                twfdebug("caching item " .. itemID)
+                Transmog.availableTransmogsCacheDelay.InventorySlotId = slot
+                Transmog.availableTransmogsCacheDelay.ItemClass = itemClass
+                Transmog.availableTransmogsCacheDelay:Show()
+                return
+            end
 
-        if name then
-			local reset = false
-			if eqItemLink then
-				reset = itemID == self:IDFromLink(eqItemLink)
-			end
-            table.insert(self.availableTransmogItems[slot][itemClass], {
-                ['id'] = itemID,
-                ['reset'] = reset,
-                ['name'] = name,
-                ['link'] = link,
-                ['quality'] = quality,
-                ['t1'] = class,
-                ['t2'] = subclass,
-                ['equip_slot'] = inv_type,
-                ['tex'] = tex,
-                ['itemLink'] = eqItemLink
-            })
+            if name then
+                local reset = false
+                if eqItemLink then
+                    reset = itemID == self:IDFromLink(eqItemLink)
+                end
+                table.insert(self.availableTransmogItems[slot][itemClass], {
+                    ['id'] = itemID,
+                    ['reset'] = reset,
+                    ['name'] = name,
+                    ['link'] = link,
+                    ['quality'] = quality,
+                    ['t1'] = class,
+                    ['t2'] = subclass,
+                    ['equip_slot'] = inv_type,
+                    ['tex'] = tex,
+                    ['itemLink'] = eqItemLink
+                })
+            end
         end
     end
 
@@ -109,22 +99,21 @@ function Transmog:prepareAvailableTransmogs(slot, itemClass)
         })
     end
 
-	twfdebug("prepareAvailableTransmogs end")
+    twfdebug("prepareAvailableTransmogs end")
 end
 
 -- Renders the grid of transmog item buttons for the currently selected slot.
 function Transmog:renderAvailableTransmogs(slot, itemClass)
+    twfdebug("renderAvailableTransmogs slot: " .. slot .. " itemClass: " .. itemClass)
 
-	twfdebug("renderAvailableTransmogs slot: " .. slot .. " itemClass: " .. itemClass)
-
-	if not self.transmogDataFromServer[slot] then
-		return
-	end
+    if not self.transmogDataFromServer[slot] then
+        return
+    end
 
     self:hideItems(true)
     self:hideItemBorders()
 
-	self:setProgressBar(self:tableSize(self.transmogDataFromServer[slot][itemClass]), self.numTransmogs[slot][itemClass])
+    self:setProgressBar(self:tableSize(self.transmogDataFromServer[slot][itemClass]), self.numTransmogs[slot][itemClass])
     if self:tableSize(self.transmogDataFromServer[slot][itemClass]) == 0 then
         ChromieTransmogFrameNoTransmogs:SetText("You have yet to uncover any kind of appearance for this item. \nThe appearance will unlock after you equip the item.")
         ChromieTransmogFrameNoTransmogs:Show()
@@ -138,9 +127,7 @@ function Transmog:renderAvailableTransmogs(slot, itemClass)
     local itemIndex = 1
 
     for _, item in ipairs(self.availableTransmogItems[slot][itemClass]) do
-
         if index >= (self.currentPage - 1) * self.ipp and index < self.currentPage * self.ipp then
-
             if not self.ItemButtons[itemIndex] then
                 self.ItemButtons[itemIndex] = CreateFrame('Frame', 'TransmogLook' .. itemIndex, ChromieTransmogFrame, 'ChromieTransmogFrameLookTemplate')
             end
@@ -171,7 +158,7 @@ function Transmog:renderAvailableTransmogs(slot, itemClass)
             local model = getglobal('TransmogLook' .. itemIndex .. 'ItemModel')
 
             model:SetUnit("player")
-            model:SetRotation(0.61);
+            model:SetRotation(0.61)
             local Z, X, Y = model:GetPosition(Z, X, Y)
 
             if self.race == 'nightelf' then
@@ -194,7 +181,7 @@ function Transmog:renderAvailableTransmogs(slot, itemClass)
 
             if self.currentTransmogSlot == self.inventorySlots['HeadSlot'] then
                 if self.race == 'tauren' then
-                    model:SetRotation(0.3);
+                    model:SetRotation(0.3)
                     X = X - 0.2
                     Y = Y + 0.2
                 end
@@ -222,13 +209,13 @@ function Transmog:renderAvailableTransmogs(slot, itemClass)
             end
 
             if self.currentTransmogSlot == self.inventorySlots['BackSlot'] then
-                model:SetRotation(3.2);
+                model:SetRotation(3.2)
                 model:SetPosition(Z + 3.8, X, Y - 0.7)
             end
 
             if self.currentTransmogSlot == self.inventorySlots['ChestSlot'] then
                 if self.race == 'tauren' then
-                    model:SetRotation(0.3);
+                    model:SetRotation(0.3)
                     X = X - 0.2
                     Y = Y + 0.5
                 end
@@ -236,12 +223,12 @@ function Transmog:renderAvailableTransmogs(slot, itemClass)
                     Y = Y + 1.5
                     Z = Z - 0.5
                 end
-                model:SetRotation(0.61);
+                model:SetRotation(0.61)
                 model:SetPosition(Z + 5.8, X + 0.1, Y - 1.2)
             end
 
             if self.currentTransmogSlot == self.inventorySlots['WristSlot'] then
-                model:SetRotation(1.5);
+                model:SetRotation(1.5)
                 if self.race == 'gnome' then
                     Y = Y - 1
                 end
@@ -263,7 +250,7 @@ function Transmog:renderAvailableTransmogs(slot, itemClass)
             end
 
             if self.currentTransmogSlot == self.inventorySlots['HandsSlot'] then
-                model:SetRotation(1.5);
+                model:SetRotation(1.5)
                 if self.race == 'gnome' then
                     Y = Y - 0.7
                 end
@@ -286,7 +273,7 @@ function Transmog:renderAvailableTransmogs(slot, itemClass)
             end
 
             if self.currentTransmogSlot == self.inventorySlots['WaistSlot'] then
-                model:SetRotation(0.31);
+                model:SetRotation(0.31)
                 if self.race == 'gnome' then
                     Y = Y - 0.7
                 end
@@ -302,7 +289,7 @@ function Transmog:renderAvailableTransmogs(slot, itemClass)
             end
 
             if self.currentTransmogSlot == self.inventorySlots['LegsSlot'] then
-                model:SetRotation(0.31);
+                model:SetRotation(0.31)
                 if self.race == 'gnome' then
                     Z = Z + 2
                     Y = Y - 1.5
@@ -314,7 +301,7 @@ function Transmog:renderAvailableTransmogs(slot, itemClass)
             end
 
             if self.currentTransmogSlot == self.inventorySlots['FeetSlot'] then
-                model:SetRotation(0.61);
+                model:SetRotation(0.61)
                 if self.race == 'gnome' then
                     Z = Z + 2
                     Y = Y - 1.9
@@ -326,7 +313,7 @@ function Transmog:renderAvailableTransmogs(slot, itemClass)
             end
 
             if self.currentTransmogSlot == self.inventorySlots['MainHandSlot'] then
-                model:SetRotation(0.61);
+                model:SetRotation(0.61)
                 if self.race == 'gnome' then
                     Y = Y - 2
                 end
@@ -337,7 +324,7 @@ function Transmog:renderAvailableTransmogs(slot, itemClass)
             end
 
             if self.currentTransmogSlot == self.inventorySlots['SecondaryHandSlot'] then
-                model:SetRotation(-0.61);
+                model:SetRotation(-0.61)
                 model:SetPosition(Z + 3.8, X, Y)
                 if self.race == 'gnome' then
                     Y = Y - 1.5
@@ -350,7 +337,7 @@ function Transmog:renderAvailableTransmogs(slot, itemClass)
             if self.currentTransmogSlot == self.inventorySlots['RangedSlot'] then
                 model:SetRotation(-0.61)
                 if self.invTypes[item.equip_slot] == C_INVTYPE_RANGEDRIGHT then
-                    model:SetRotation(0.61);
+                    model:SetRotation(0.61)
                 end
                 if self.race == 'troll' then
                     Y = Y + 1.5
@@ -368,13 +355,13 @@ function Transmog:renderAvailableTransmogs(slot, itemClass)
 
             if self.currentTransmogSlot == self.inventorySlots['SecondaryHandSlot'] then
                 local mh = self.equippedItems[self.inventorySlots['MainHandSlot']]
-                if mh then
+                if mh and mh > 1 then
                     model:TryOn(mh)
                 end
             end
 
             if item.id ~= Transmog.HIDDEN_ITEM_ID then
-                model:TryOn(item.id);
+                model:TryOn(item.id)
             end
 
             col = col + 1
@@ -384,7 +371,6 @@ function Transmog:renderAvailableTransmogs(slot, itemClass)
             end
 
             itemIndex = itemIndex + 1
-
         end
         index = index + 1
     end
@@ -414,5 +400,4 @@ function Transmog:renderAvailableTransmogs(slot, itemClass)
     if self.currentTransmogSlotName then
         getglobal(self.currentTransmogSlotName .. 'BorderSelected'):Show()
     end
-
 end

@@ -9,8 +9,6 @@ if Transmog.race ~= 'human' and Transmog.race ~= 'gnome' and Transmog.race ~= 'd
     Transmog.faction = 'H'
 end
 
-Transmog.prefix = "transmog"
-
 -- azerothcore/mod-transmog default NPCs (ChromieCraft Warpweaver / portable pet).
 Transmog.CHROMIE_NPC_IDS = {
     [190010] = true,
@@ -67,6 +65,11 @@ Transmog.hideableSlots = {
     [18] = true, -- Ranged
 }
 
+-- DressUpModel TryOn order: armor first, weapons last (main hand re-applied after offhand).
+-- Ranged (18) is only dressed when that slot has a pending preview change.
+Transmog.previewArmorOrder = { 1, 3, 5, 6, 7, 8, 9, 10, 15 }
+Transmog.previewWeaponSlots = { 16, 17 }
+
 Transmog.invTypes = {
     ['INVTYPE_HEAD'] = 1,
     ['INVTYPE_SHOULDER'] = 3,
@@ -91,6 +94,7 @@ Transmog.invTypes = {
     ['INVTYPE_THROWN'] = 25,
     ['INVTYPE_RANGED'] = 15,
     ['INVTYPE_RANGEDRIGHT'] = 26,
+    ['INVTYPE_RELIC'] = 28,
 }
 
 EQUIPMENT_SLOT_HEAD = 0

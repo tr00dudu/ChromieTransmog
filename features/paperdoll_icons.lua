@@ -1,25 +1,59 @@
 local Transmog = _G.ChromieTransmog
 
 -- Character/inspect paperdoll use GetInventoryItemTexture, which follows the
--- visible transmog entry. Bags use the real item. Always paint equipped slots
--- from the actual item link so hidden mogs are not empty and mogged slots
--- keep their original icon.
+-- visible transmog entry. Always paint slot buttons from the real item link.
 
-local function originalItemTexture(unit, slot)
+local PAPERDOLL_SLOTS = { 1, 3, 5, 6, 7, 8, 9, 10, 15, 16, 17, 18 }
+
+local PLAYER_SLOT_BUTTON = {
+    [1] = "CharacterHeadSlot",
+    [3] = "CharacterShoulderSlot",
+    [5] = "CharacterChestSlot",
+    [6] = "CharacterWaistSlot",
+    [7] = "CharacterLegsSlot",
+    [8] = "CharacterFeetSlot",
+    [9] = "CharacterWristSlot",
+    [10] = "CharacterHandsSlot",
+    [15] = "CharacterBackSlot",
+    [16] = "CharacterMainHandSlot",
+    [17] = "CharacterSecondaryHandSlot",
+    [18] = "CharacterRangedSlot",
+}
+
+local INSPECT_SLOT_BUTTON = {
+    [1] = "InspectHeadSlot",
+    [3] = "InspectShoulderSlot",
+    [5] = "InspectChestSlot",
+    [6] = "InspectWaistSlot",
+    [7] = "InspectLegsSlot",
+    [8] = "InspectFeetSlot",
+    [9] = "InspectWristSlot",
+    [10] = "InspectHandsSlot",
+    [15] = "InspectBackSlot",
+    [16] = "InspectMainHandSlot",
+    [17] = "InspectSecondaryHandSlot",
+    [18] = "InspectRangedSlot",
+}
+
+local function itemLinkFromInventory(unit, slot)
     local link = GetInventoryItemLink(unit, slot)
     if not link then
         return nil
     end
-    local tex
-    if GetItemIcon then
-        local itemId = Transmog:IDFromLink(link)
-        if itemId then
-            tex = GetItemIcon(itemId)
-        end
+    local _, _, itemLink = string.find(link, "(item:%d+:%d+:%d+:%d+)")
+    return itemLink or link
+end
+
+local function originalItemTexture(unit, slot)
+    local itemLink = itemLinkFromInventory(unit, slot)
+    if not itemLink then
+        return nil
     end
-    if not tex then
-        tex = select(10, GetItemInfo(link))
+    local itemId = Transmog:IDFromLink(itemLink)
+    if itemId and Transmog.cacheItem then
+        Transmog:cacheItem(itemId)
     end
+    local _, _, _, _, _, _, _, _, _, tex = GetItemInfo(itemLink)
     return tex
 end
 
@@ -36,7 +70,31 @@ function Transmog:ChromieRestoreSlotIcon(button, unit)
         return
     end
     SetItemButtonTexture(button, tex)
+    local icon = getglobal(button:GetName() .. "Icon")
+    if icon and icon.SetTexture then
+        icon:SetTexture(tex)
+    end
+    if button.icon and button.icon.SetTexture then
+        button.icon:SetTexture(tex)
+    end
     button.hasItem = 1
+end
+
+function Transmog:ChromieRefreshPaperdollIcons(unit)
+    unit = unit or "player"
+    local map = (unit == "player") and PLAYER_SLOT_BUTTON or INSPECT_SLOT_BUTTON
+    local i = 1
+    while PAPERDOLL_SLOTS[i] do
+        local slot = PAPERDOLL_SLOTS[i]
+        local name = map[slot]
+        if name then
+            local button = getglobal(name)
+            if button and GetInventoryItemLink(unit, slot) then
+                self:ChromieRestoreSlotIcon(button, unit)
+            end
+        end
+        i = i + 1
+    end
 end
 
 local TRANSMOG_PINK = "|cffff80ff"
@@ -69,8 +127,6 @@ local function isHiddenTexture(tex)
     return string.find(n, "paperdoll", 1, true) or string.find(n, "wowunknownitem", 1, true)
 end
 
--- GetInventoryItemTexture follows the visible fake entry on character and
--- inspect. Compare that to the real item icon: hidden slot vs different icon.
 local function mogStateFromTextures(unit, slot)
     local visTex = GetInventoryItemTexture(unit, slot)
     local origTex = originalItemTexture(unit, slot)
@@ -103,29 +159,74 @@ function Transmog:ChromieForgetMog(link)
     end
 end
 
+function Transmog:ChromieMogItemName(slot, unit)
+    if unit ~= "player" or not slot then
+        return nil
+    end
+    local link = GetInventoryItemLink("player", slot)
+    local mogId = link and self.ChromiePersistGetOwnedMog
+        and self:ChromiePersistGetOwnedMog(link, self:ChromieOwnedIconForSlot(slot))
+    if not mogId or mogId <= 1 then
+        local from = self.transmogStatusFromServer and self.transmogStatusFromServer[slot]
+        from = from and tonumber(from)
+        if from and from > 1 then
+            mogId = from
+        elseif self.ChromieResolveAppliedMogId then
+            mogId = self:ChromieResolveAppliedMogId(slot)
+        end
+    end
+    if not mogId or mogId <= 1 then
+        return nil
+    end
+    if self.cacheItem then
+        self:cacheItem(mogId)
+    end
+    return GetItemInfo(mogId)
+end
+
+function Transmog:ChromieFormatMogLabel(state, slot, unit)
+    if state == "hidden" then
+        return LABEL_HIDDEN
+    end
+    if state == "mogged" and unit == "player" and slot then
+        local name = self:ChromieMogItemName(slot, unit)
+        if name then
+            return TRANSMOG_PINK .. "Transmogrified: " .. name .. "|r"
+        end
+    end
+    if state == "mogged" then
+        return LABEL_MOGGED
+    end
+    return nil
+end
+
 function Transmog:ChromieAppearanceLabel(unit, slot)
     local link = GetInventoryItemLink(unit, slot)
     if not link then
         return nil
     end
 
+    -- Live textures decide if this equipped piece currently looks mogged.
     local state = mogStateFromTextures(unit, slot)
 
     if unit == "player" then
-        local from = self.transmogStatusFromServer and self.transmogStatusFromServer[slot]
-        if from == self.HIDDEN_ITEM_ID then
-            state = "hidden"
-        elseif from == self.UNKNOWN_MOG_ID or (from and from > 1) then
-            if state ~= "hidden" then
+        local owned = self.ChromiePersistGetOwnedMog
+            and self:ChromiePersistGetOwnedMog(link, self:ChromieOwnedIconForSlot(slot))
+        local gossip = self.transmogGossipIcon and self.transmogGossipIcon[slot]
+        if not state and gossip then
+            local origKey = iconKey(originalItemTexture(unit, slot))
+            if iconKey(gossip) ~= origKey and not isHiddenTexture(gossip) then
                 state = "mogged"
             end
         end
-        if not state then
-            local gossip = self.transmogGossipIcon and self.transmogGossipIcon[slot]
-            local origKey = iconKey(originalItemTexture(unit, slot))
-            if gossip and iconKey(gossip) ~= origKey and not isHiddenTexture(gossip) then
-                state = "mogged"
+        -- Owned map is per-item. Use it for names / hidden, never to override a
+        -- clean (unmogged) texture for a different piece in the same slot.
+        if state == "mogged" or state == "hidden" then
+            if owned == self.HIDDEN_ITEM_ID then
+                state = "hidden"
             end
+        elseif owned == self.HIDDEN_ITEM_ID and isHiddenTexture(GetInventoryItemTexture(unit, slot)) then
+            state = "hidden"
         end
     end
 
@@ -135,89 +236,246 @@ function Transmog:ChromieAppearanceLabel(unit, slot)
     end
     if state == "mogged" then
         self:ChromieRememberMog(link, false)
-        return LABEL_MOGGED
+        return self:ChromieFormatMogLabel("mogged", slot, unit)
     end
     self:ChromieForgetMog(link)
     return nil
 end
 
 function Transmog:ChromieAppearanceLabelForLink(link)
-    local uid = self:ChromieLinkUniqueId(link)
-    if not uid or not self.mogByUniqueId then
+    if not link then
         return nil
     end
-    local state = self.mogByUniqueId[uid]
-    if state == "hidden" then
+    local itemId = self:IDFromLink(link)
+    local uid = self:ChromieLinkUniqueId(link)
+    for _, slotId in pairs(self.inventorySlots or {}) do
+        local eq = GetInventoryItemLink("player", slotId)
+        if eq and self:IDFromLink(eq) == itemId then
+            if uid and self:ChromieLinkUniqueId(eq) == uid then
+                return self:ChromieAppearanceLabel("player", slotId)
+            end
+            if not uid then
+                return self:ChromieAppearanceLabel("player", slotId)
+            end
+        end
+    end
+    local bagIcon = select(10, GetItemInfo(link))
+    local owned = self.ChromiePersistGetOwnedMog and self:ChromiePersistGetOwnedMog(link, bagIcon)
+    if not owned and self.ChromiePersistFindOwnedMogForItem then
+        owned = self:ChromiePersistFindOwnedMogForItem(itemId)
+    end
+    if owned == self.HIDDEN_ITEM_ID then
         return LABEL_HIDDEN
     end
-    if state == "mogged" then
+    if owned and owned > 1 then
+        if self.cacheItem then
+            self:cacheItem(owned)
+        end
+        local name = GetItemInfo(owned)
+        if name then
+            return TRANSMOG_PINK .. "Transmogrified: " .. name .. "|r"
+        end
         return LABEL_MOGGED
+    end
+    if uid and self.mogByUniqueId then
+        local state = self.mogByUniqueId[uid]
+        if state == "hidden" then
+            return LABEL_HIDDEN
+        end
+        if state == "mogged" then
+            return LABEL_MOGGED
+        end
     end
     return nil
 end
 
-function Transmog:ChromieAttachTransmogTooltip(tooltip, unit, slot, bagLink)
+local function inspectUnit()
+    if InspectFrame and InspectFrame.unit then
+        return InspectFrame.unit
+    end
+    return "target"
+end
+
+function Transmog:ChromieTooltipHasMogLine(tooltip)
     if not tooltip then
+        return false
+    end
+    local i = 1
+    local left = getglobal(tooltip:GetName() .. "TextLeft" .. i)
+    while left and left:GetText() do
+        if string.find(left:GetText(), "Transmogrified", 1, true) then
+            return true
+        end
+        i = i + 1
+        left = getglobal(tooltip:GetName() .. "TextLeft" .. i)
+    end
+    return false
+end
+
+function Transmog:ChromieIsTransmogGearSlot(slot)
+    if not slot then
+        return false
+    end
+    for _, slotId in pairs(self.inventorySlots or {}) do
+        if slotId == slot then
+            return true
+        end
+    end
+    return false
+end
+
+function Transmog:ChromieShouldAttachTransmogTooltip(unit, slot)
+    if not unit or not slot or not self:ChromieIsTransmogGearSlot(slot) then
+        return false
+    end
+    if not self:ChromieSlotSupportsTransmog(slot) then
+        return false
+    end
+    if unit == "player" then
+        return true
+    end
+    if unit == "target" then
+        return true
+    end
+    if InspectFrame and InspectFrame.unit and unit == InspectFrame.unit then
+        return true
+    end
+    return false
+end
+
+function Transmog:ChromieAttachTransmogTooltip(tooltip, unit, slot)
+    if not tooltip or not self:ChromieShouldAttachTransmogTooltip(unit, slot) then
         return
     end
-    local label
-    if unit and slot then
-        label = self:ChromieAppearanceLabel(unit, slot)
-    elseif bagLink then
-        label = self:ChromieAppearanceLabelForLink(bagLink)
+    if self:ChromieTooltipHasMogLine(tooltip) then
+        return
     end
+    local label = self:ChromieAppearanceLabel(unit, slot)
     if not label then
         return
     end
     local left2 = getglobal(tooltip:GetName() .. "TextLeft2")
-    if not left2 then
-        return
-    end
-    local existing = left2:GetText() or ""
-    if string.find(existing, "Transmogrified", 1, true) then
-        return
-    end
-    if existing == "" then
-        left2:SetText(label)
-    else
-        left2:SetText(label .. "\n|cffffffff" .. existing)
+    if left2 then
+        local existing = left2:GetText() or ""
+        if existing == "" then
+            left2:SetText(label)
+        else
+            left2:SetText(label .. "\n|cffffffff" .. existing)
+        end
+    elseif tooltip.AddLine then
+        tooltip:AddLine(label)
     end
     tooltip:Show()
 end
 
+function Transmog:ChromieInstallTooltipHooks()
+    if self.chromieTooltipHooksInstalled then
+        return
+    end
+    self.chromieTooltipHooksInstalled = true
+
+    if GameTooltip and GameTooltip.SetInventoryItem then
+        hooksecurefunc(GameTooltip, "SetInventoryItem", function(tip, unit, slot)
+            if not Transmog:ChromieShouldAttachTransmogTooltip(unit, slot) then
+                return
+            end
+            tip.itemLink = GetInventoryItemLink(unit, slot)
+            Transmog:ChromieAttachTransmogTooltip(tip, unit, slot)
+        end)
+    end
+
+    -- Character/inspect call Show() after SetInventoryItem; attach again once that finishes.
+    if PaperDollItemSlotButton_OnEnter then
+        hooksecurefunc("PaperDollItemSlotButton_OnEnter", function()
+            local button = this
+            local slot = button and button:GetID()
+            if button and GameTooltip and Transmog:ChromieShouldAttachTransmogTooltip("player", slot) then
+                Transmog:ChromieAttachTransmogTooltip(GameTooltip, "player", slot)
+            end
+        end)
+    end
+
+    if InspectPaperDollItemSlotButton_OnEnter then
+        hooksecurefunc("InspectPaperDollItemSlotButton_OnEnter", function()
+            local button = this
+            local unit = inspectUnit()
+            local slot = button and button:GetID()
+            if button and GameTooltip and Transmog:ChromieShouldAttachTransmogTooltip(unit, slot) then
+                Transmog:ChromieAttachTransmogTooltip(GameTooltip, unit, slot)
+            end
+        end)
+    end
+end
+
 local function hookPaperDoll()
-    if Transmog.chromieHookedPaperDoll or not PaperDollItemSlotButton_Update then
+    if Transmog.chromieHookedPaperDoll then
+        return
+    end
+    if not PaperDollItemSlotButton_Update then
         return
     end
     Transmog.chromieHookedPaperDoll = true
     hooksecurefunc("PaperDollItemSlotButton_Update", function(button)
         Transmog:ChromieRestoreSlotIcon(button, "player")
     end)
+    if PaperDollFrame_Update then
+        hooksecurefunc("PaperDollFrame_Update", function()
+            Transmog:ChromieRefreshPaperdollIcons("player")
+        end)
+    end
+    if CharacterFrame then
+        CharacterFrame:HookScript("OnShow", function()
+            Transmog:ChromieRefreshPaperdollIcons("player")
+        end)
+    end
 end
 
 local function hookInspect()
-    if Transmog.chromieHookedInspect or not InspectPaperDollItemSlotButton_Update then
+    if Transmog.chromieHookedInspect then
+        return
+    end
+    if not InspectPaperDollItemSlotButton_Update then
         return
     end
     Transmog.chromieHookedInspect = true
     hooksecurefunc("InspectPaperDollItemSlotButton_Update", function(button)
-        local unit = "target"
-        if InspectFrame and InspectFrame.unit then
-            unit = InspectFrame.unit
-        end
-        Transmog:ChromieRestoreSlotIcon(button, unit)
+        Transmog:ChromieRestoreSlotIcon(button, inspectUnit())
     end)
+    if InspectPaperDollFrame_Update then
+        hooksecurefunc("InspectPaperDollFrame_Update", function()
+            Transmog:ChromieRefreshPaperdollIcons(inspectUnit())
+        end)
+    end
+    if InspectFrame then
+        InspectFrame:HookScript("OnShow", function()
+            Transmog:ChromieRefreshPaperdollIcons(inspectUnit())
+        end)
+    end
 end
 
-hookPaperDoll()
-if IsAddOnLoaded("Blizzard_InspectUI") then
+local function installHooks()
+    hookPaperDoll()
     hookInspect()
 end
 
+installHooks()
+
 local loader = CreateFrame("Frame")
+loader:RegisterEvent("PLAYER_LOGIN")
 loader:RegisterEvent("ADDON_LOADED")
+loader:RegisterEvent("UNIT_INVENTORY_CHANGED")
 loader:SetScript("OnEvent", function()
-    if arg1 == "Blizzard_InspectUI" then
+    if event == "PLAYER_LOGIN" then
+        installHooks()
+        Transmog:ChromieInstallTooltipHooks()
+        Transmog:ChromieRefreshPaperdollIcons("player")
+    elseif event == "ADDON_LOADED" and arg1 == "Blizzard_InspectUI" then
         hookInspect()
+    elseif event == "UNIT_INVENTORY_CHANGED" then
+        if arg1 == "player" then
+            Transmog:ChromieRefreshPaperdollIcons("player")
+        elseif InspectFrame and InspectFrame:IsShown() and arg1 == inspectUnit() then
+            Transmog:ChromieRefreshPaperdollIcons(arg1)
+        end
     end
 end)

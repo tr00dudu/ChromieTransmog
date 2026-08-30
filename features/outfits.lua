@@ -113,6 +113,11 @@ function Transmog:ChromieRemoveSetName(name)
     while names[i] do
         if names[i] == name then
             table.remove(names, i)
+            if self.ChromiePersistDropSet then
+                self:ChromiePersistDropSet(name)
+            elseif self.chromieSetItems then
+                self.chromieSetItems[name] = nil
+            end
             return
         end
         i = i + 1
@@ -128,6 +133,25 @@ function Transmog:ChromieHasAnyMog()
         end
     end
     return false
+end
+
+-- Warpweaver only offers save when at least one applied transmog exists on gear.
+function Transmog:ChromieUpdateCanSaveSet(options)
+    local can = false
+    if self:tableSize(self.chromieSets or {}) < self.CHROMIE_MAX_SETS then
+        if self:ChromieHasAnyMog() then
+            can = true
+        else
+            options = options or self.chromieLastOptions
+            if options and self.ChromieFindFlagIndex and self:ChromieFindFlagIndex(options, "saveSet") then
+                can = true
+            end
+        end
+    end
+    self.chromieCanSaveSet = can
+    if self.manageSetsOpen and self.ChromieRefreshManageSetList then
+        self:ChromieRefreshManageSetList()
+    end
 end
 
 function Transmog:ChromieHideManageSets()
@@ -179,6 +203,9 @@ function Transmog:ChromieEnsureManageSetsFrame()
     edit:SetScript("OnEscapePressed", function()
         this:ClearFocus()
         this:SetText("")
+    end)
+    edit:SetScript("OnTextChanged", function()
+        Transmog:ChromieRefreshManageSetList()
     end)
     f.edit = edit
 
@@ -339,6 +366,8 @@ function Transmog:ChromieRefreshManageSetList()
     end
     if n >= self.CHROMIE_MAX_SETS or self.chromieJob == "sets-save" or self.chromieJob == "sets-price" or self.chromieWantSetPrice then
         f.save:Disable()
+    elseif self.chromieCanSaveSet ~= true then
+        f.save:Disable()
     elseif self.chromieSetSaveCopper and GetMoney() < self.chromieSetSaveCopper then
         f.save:Disable()
     else
@@ -370,16 +399,20 @@ function Transmog:ChromieRefreshManageSets()
 end
 
 function Transmog:ChromieShowManageSets()
+    if self.ChromieCacheSyncIsBlocking and self:ChromieCacheSyncIsBlocking() then
+        return
+    end
     self:hideItems(true)
     self:hidePagination()
     ChromieTransmogFrameSplash:Hide()
     ChromieTransmogFrameInstructions:Hide()
     ChromieTransmogFrameNoTransmogs:Hide()
-    ChromieTransmogFrameCollected:Hide()
+    ChromieTransmogFrameCollectedText:Hide()
     self:ChromieHideSetCreate()
     local f = self:ChromieEnsureManageSetsFrame()
     self.manageSetsOpen = true
     f:Show()
+    self:ChromieUpdateCanSaveSet()
     self:ChromieRefreshManageSetList()
     if self.ChromieStartSetPrice then
         self:ChromieStartSetPrice()
@@ -401,6 +434,8 @@ function Transmog_LoadOutfit(self, outfit)
     if not outfit then
         return
     end
+    Transmog:Chat("Applying set \"" .. tostring(outfit) .. "\"...")
+    Transmog.chromieQuickApplySetName = outfit
     Transmog:ChromieHideSetCreate()
     selectTransmogSlot(-1)
     UIDropDownMenu_SetText(ChromieTransmogFrameOutfits, Transmog:ChromieSetsDropdownLabel())
@@ -494,11 +529,356 @@ function Transmog_ConfirmNewSet()
         Transmog:Chat("Set limit reached.")
         return
     end
-    if not Transmog:ChromieHasAnyMog() then
+    if Transmog.chromieCanSaveSet ~= true then
         Transmog:Chat("Nothing to save. Transmogrify at least one item first.")
         return
     end
     if Transmog.ChromieStartSetSave then
         Transmog:ChromieStartSetSave(name)
+    end
+end
+
+-- Set cache on quick-apply (merged from set_cache.lua; must live in a file that loads reliably)
+function Transmog:ChromieSetCacheDbg(msg)
+    if self.Chat then
+        self:Chat("[SetCache] " .. tostring(msg))
+    end
+end
+
+function Transmog:ChromieSetCacheSlotSummary(slot)
+    local label = self.ChromieSlotLabelShort and self:ChromieSlotLabelShort(slot) or tostring(slot)
+    local have = self.transmogStatusFromServer and self.transmogStatusFromServer[slot]
+    local mogged = self:ChromieSlotIsMogged(slot) and "yes" or "no"
+    local resolved = self.ChromieResolveAppliedMogId and self:ChromieResolveAppliedMogId(slot)
+    return label .. " have=" .. tostring(have) .. " mogged=" .. mogged .. " resolved=" .. tostring(resolved)
+end
+
+function Transmog:ChromieUnlockCacheHealthyForSlots(slots)
+    local char = self:ChromiePersistChar()
+    if not char or not slots or not slots[1] then
+        return true
+    end
+    local i = 1
+    while slots[i] do
+        local slot = slots[i]
+        local link = GetInventoryItemLink("player", slot)
+        if not link then
+            self:ChromieSetCacheDbg("health fail " .. self:ChromieSetCacheSlotSummary(slot) .. " (no item link)")
+            return false
+        end
+        local key = self:ChromieCacheKeyForSlot(slot, link)
+        local entry = key and char.unlocks and char.unlocks[key]
+        local status = self:ChromieCacheSlotEffectiveStatus(slot, entry)
+        if status ~= "ok" then
+            self:ChromieSetCacheDbg("health fail " .. self:ChromieSetCacheSlotSummary(slot)
+                .. " key=" .. tostring(key) .. " status=" .. tostring(status))
+            return false
+        end
+        i = i + 1
+    end
+    return true
+end
+
+function Transmog:ChromieSetIsCached(name)
+    local char = self:ChromiePersistChar()
+    if not char or not char.sets or not char.sets.items or not name then
+        return false
+    end
+    if not char.sets.items[name] then
+        return false
+    end
+    return char.sets.inferred and char.sets.inferred[name] and true or false
+end
+
+function Transmog:ChromieSetCacheCollectSlots()
+    local scanSlots = {}
+    local items = {}
+    local _, slot
+    for _, slot in pairs(self.inventorySlots or {}) do
+        if not self:ChromieSlotSupportsTransmog(slot) then
+            -- skip
+        elseif not GetInventoryItemLink("player", slot) then
+            -- skip
+        elseif self.transmogStatusFromServer[slot] == self.HIDDEN_ITEM_ID then
+            items[slot] = self.HIDDEN_ITEM_ID
+            self:ChromieSetCacheDbg("collect hidden " .. self:ChromieSetCacheSlotSummary(slot))
+        elseif self:ChromieSlotIsMogged(slot) then
+            local mogId = self:ChromieResolveAppliedMogId(slot)
+            mogId = mogId and tonumber(mogId)
+            if mogId and mogId > 1 then
+                items[slot] = mogId
+                self:ChromieSetCacheDbg("collect resolved " .. self:ChromieSetCacheSlotSummary(slot) .. " -> " .. mogId)
+            else
+                table.insert(scanSlots, slot)
+                self:ChromieSetCacheDbg("collect needs scan " .. self:ChromieSetCacheSlotSummary(slot))
+            end
+        else
+            items[slot] = 0
+            self:ChromieSetCacheDbg("collect unmogged " .. self:ChromieSetCacheSlotSummary(slot))
+        end
+    end
+    return scanSlots, items
+end
+
+function Transmog:ChromieSetCacheRecordSlot(slot)
+    local job = self.setCacheJob
+    if not job or not slot then
+        return
+    end
+    local mogId = 0
+    if self.transmogStatusFromServer[slot] == self.HIDDEN_ITEM_ID then
+        mogId = self.HIDDEN_ITEM_ID
+    elseif self:ChromieSlotIsMogged(slot) then
+        mogId = self:ChromieResolveAppliedMogId(slot)
+        if not mogId or mogId <= 1 then
+            mogId = self:ChromiePersistGetApplied(slot)
+        end
+        mogId = mogId and tonumber(mogId)
+        if mogId and mogId == self.UNKNOWN_MOG_ID then
+            mogId = nil
+        end
+    end
+    job.items[slot] = mogId or 0
+    self:ChromieSetCacheDbg("record " .. self:ChromieSetCacheSlotSummary(slot) .. " -> " .. tostring(job.items[slot]))
+end
+
+function Transmog:ChromiePersistEnsureSetName(name)
+    local char = self:ChromiePersistChar()
+    if not char or not name then
+        return
+    end
+    if not char.sets.names then
+        char.sets.names = {}
+    end
+    local i = 1
+    while char.sets.names[i] do
+        if char.sets.names[i] == name then
+            return
+        end
+        i = i + 1
+    end
+    table.insert(char.sets.names, name)
+    self.chromieSets = char.sets.names
+end
+
+function Transmog:ChromieSetCacheFinish()
+    local job = self.setCacheJob
+    self.setCacheJob = nil
+    if not job or not job.name then
+        self:ChromieSetCacheDbg("finish: no job")
+        return
+    end
+    self:ChromieSetCacheDbg("finish \"" .. tostring(job.name) .. "\"")
+    local i = 1
+    while job.scanSlots[i] do
+        local slot = job.scanSlots[i]
+        local id = job.items[slot]
+        if not id or (id <= 1 and id ~= self.HIDDEN_ITEM_ID) then
+            self:ChromieSetCacheDbg("finish abort: missing mog on " .. self:ChromieSetCacheSlotSummary(slot)
+                .. " recorded=" .. tostring(id))
+            self:Chat("Could not cache set \"" .. tostring(job.name) .. "\": mog unknown on "
+                .. self:ChromieSlotLabelShort(slot) .. ".")
+            return
+        end
+        i = i + 1
+    end
+    self:ChromiePersistEnsureSetName(job.name)
+    if self.ChromiePersistSetItems then
+        self:ChromiePersistSetItems(job.name, job.items)
+    end
+    self.lastAppliedSetName = job.name
+    local parts = {}
+    for slot, id in pairs(job.items) do
+        if type(slot) == "number" then
+            table.insert(parts, tostring(slot) .. "=" .. tostring(id))
+        end
+    end
+    table.sort(parts)
+    self:ChromieSetCacheDbg("persisted {" .. table.concat(parts, ", ") .. "}")
+    self:Chat("Cached set \"" .. tostring(job.name) .. "\".")
+    if self.ChromieCacheTabRefresh then
+        self:ChromieCacheTabRefresh(true)
+    end
+end
+
+function Transmog:ChromieSetCacheScanNext()
+    local job = self.setCacheJob
+    if not job then
+        self:ChromieSetCacheDbg("scanNext: no job")
+        return
+    end
+    self:ChromieSetCacheDbg("scanNext job=\"" .. tostring(job.name) .. "\" job=" .. tostring(self.chromieJob))
+    while job.scanSlots[job.index] do
+        local slot = job.scanSlots[job.index]
+        job.index = job.index + 1
+        job.currentSlot = slot
+        self:ChromieSetCacheDbg("scan slot " .. self:ChromieSetCacheSlotSummary(slot))
+        if self.ChromieScanSlot(slot, { force = true, purpose = "set_cache", announce = false }) then
+            self:ChromieSetCacheDbg("ChromieScanSlot started for slot " .. tostring(slot))
+            return
+        end
+        self:ChromieSetCacheDbg("ChromieScanSlot refused slot " .. tostring(slot) .. " job=" .. tostring(self.chromieJob))
+        self:ChromieSetCacheRecordSlot(slot)
+        job.currentSlot = nil
+    end
+    self:ChromieSetCacheFinish()
+end
+
+function Transmog:ChromieSetCacheOnLoadDone(slot)
+    local job = self.setCacheJob
+    if not job or not slot or job.currentSlot ~= slot then
+        if job and slot then
+            self:ChromieSetCacheDbg("loadDone ignored slot=" .. tostring(slot)
+                .. " current=" .. tostring(job.currentSlot))
+        end
+        return false
+    end
+    self:ChromieSetCacheDbg("loadDone slot " .. tostring(slot))
+    self:ChromieSetCacheRecordSlot(slot)
+    job.currentSlot = nil
+    if job.scanSlots[job.index] then
+        job.pendingNext = true
+        self:ChromieSetCacheDbg("pending next scan after back to main")
+    else
+        self:ChromieSetCacheFinish()
+    end
+    return true
+end
+
+function Transmog:ChromieSetCacheResumeIfPending(onMainMenu)
+    local job = self.setCacheJob
+    if not job or not job.pendingNext or not onMainMenu then
+        return false
+    end
+    job.pendingNext = nil
+    self:ChromieSetCacheDbg("resume pending scan on main menu")
+    self:ChromieDeferSetCacheScanNext()
+    return true
+end
+
+function Transmog:ChromieDeferSetCacheScanNext()
+    local frame = self.setCacheScanKicker
+    if not frame then
+        frame = CreateFrame("Frame")
+        frame:Hide()
+        frame:SetScript("OnUpdate", function(f)
+            f:Hide()
+            if Transmog.setCacheJob and Transmog.ChromieSetCacheScanNext then
+                Transmog:ChromieSetCacheScanNext()
+            end
+        end)
+        self.setCacheScanKicker = frame
+    end
+    frame:Show()
+end
+
+function Transmog:ChromieDeferSetCacheApply(name)
+    if not name then
+        return
+    end
+    local frame = self.setCacheApplyKicker
+    if not frame then
+        frame = CreateFrame("Frame")
+        self.setCacheApplyKicker = frame
+    end
+    frame.pendingName = name
+    frame.elapsed = 0
+    frame:Show()
+    frame:SetScript("OnUpdate", function(f)
+        f.elapsed = (f.elapsed or 0) + arg1
+        if f.elapsed < 0.05 then
+            return
+        end
+        f:Hide()
+        f:SetScript("OnUpdate", nil)
+        local pending = f.pendingName
+        f.pendingName = nil
+        if pending then
+            Transmog:ChromieMaybeCacheSetOnApply(pending)
+        end
+    end)
+end
+
+function Transmog:ChromieScheduleCacheSetOnApply(name)
+    if not name then
+        return
+    end
+    self:ChromieSetCacheDbg("schedule cache for \"" .. tostring(name) .. "\"")
+    self:ChromieDeferSetCacheApply(name)
+end
+
+function Transmog:ChromieMaybeCacheSetOnApply(name)
+    self:ChromieSetCacheDbg("maybeCache \"" .. tostring(name) .. "\" job=" .. tostring(self.chromieJob)
+        .. " vendor=" .. tostring(self.chromieVendorOpen)
+        .. " frame=" .. tostring(ChromieTransmogFrame and ChromieTransmogFrame:IsShown()))
+    if not name then
+        self:Chat("[SetCache] skip: no set name.")
+        return
+    end
+    if self.setCacheJob then
+        self:Chat("[SetCache] skip: cache job already running.")
+        return
+    end
+    if self.chromieVendorOpen then
+        self:Chat("[SetCache] skip: vendor mode (.t i on).")
+        return
+    end
+    if not ChromieTransmogFrame or not ChromieTransmogFrame:IsShown() then
+        self:Chat("[SetCache] skip: transmog window closed.")
+        return
+    end
+    if self.chromieJob == "load" or self.chromieJob == "apply" then
+        self:Chat("[SetCache] defer: Warpweaver busy (" .. tostring(self.chromieJob) .. ").")
+        self:ChromieDeferSetCacheApply(name)
+        return
+    end
+    if self:ChromieSetIsCached(name) then
+        self:Chat("Set \"" .. tostring(name) .. "\" already cached.")
+        self.lastAppliedSetName = name
+        if self.ChromieCacheTabRefresh then
+            self:ChromieCacheTabRefresh(true)
+        end
+        return
+    end
+    local scanSlots, items = self:ChromieSetCacheCollectSlots()
+    local scanList = {}
+    local i = 1
+    while scanSlots[i] do
+        table.insert(scanList, tostring(scanSlots[i]))
+        i = i + 1
+    end
+    self:ChromieSetCacheDbg("scan queue: [" .. table.concat(scanList, ", ") .. "]")
+    if scanSlots[1] and not self:ChromieUnlockCacheHealthyForSlots(scanSlots) then
+        self:Chat("Set \"" .. tostring(name) .. "\" not cached: scan those mogged slots in the Cache tab first.")
+        self.lastAppliedSetName = name
+        if self.ChromieCacheTabRefresh then
+            self:ChromieCacheTabRefresh(true)
+        end
+        return
+    end
+    self.setCacheJob = {
+        name = name,
+        scanSlots = scanSlots,
+        index = 1,
+        items = items,
+    }
+    self.lastAppliedSetName = name
+    if scanSlots[1] then
+        self:Chat("Caching set \"" .. tostring(name) .. "\"...")
+        self:ChromieDeferSetCacheScanNext()
+    else
+        self:ChromieSetCacheDbg("no scans needed, persisting from resolved/hidden slots")
+        self:ChromieSetCacheFinish()
+    end
+end
+
+function Transmog:ChromieSetCacheAbort()
+    if self.setCacheJob or (self.setCacheApplyKicker and self.setCacheApplyKicker.pendingName) then
+        self:ChromieSetCacheDbg("abort")
+    end
+    self.setCacheJob = nil
+    if self.setCacheApplyKicker then
+        self.setCacheApplyKicker.pendingName = nil
+        self.setCacheApplyKicker:Hide()
     end
 end

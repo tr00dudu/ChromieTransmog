@@ -1,6 +1,5 @@
 local Transmog = _G.ChromieTransmog
 
-ChromieTransmogOutfits = {}
 Transmog.availableTransmogItems = {}
 Transmog.ItemButtons = {}
 Transmog.currentTransmogSlotName = nil
@@ -21,4 +20,9 @@ Transmog.chromieSetItems = {}
 Transmog.chromiePendingSet = nil
 Transmog.equippedTransmogs = {}
 Transmog.transmogGossipIcon = {}
-Transmog.localCache = {}
+-- Session dummy state. Gossip does not send real ids for already-applied mogs
+-- (UNKNOWN_MOG); those stay -1 until the player picks or applies one.
+Transmog.previewShown = {}
+Transmog.previewBaseline = {}
+Transmog.applied = {}
+Transmog.appliedIcon = {}

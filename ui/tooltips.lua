@@ -1,7 +1,6 @@
 local Transmog = _G.ChromieTransmog
 local ChromieTransmogFrame_Find = string.find
 local ChromieTransmogFrame_ToNumber = tonumber
-local EquipTransmogTooltip = CreateFrame("Frame", "EquipTransmogTooltip", GameTooltip)
 
 -- Shows a text-only tooltip when hovering over a frame.
 function AddButtonOnEnterTextTooltip(frame, text, ext, error, anchor, x, y)
@@ -32,6 +31,13 @@ local function fashionMogLine(transmogText, revert)
     if not transmogText then
         return nil
     end
+    if type(transmogText) == "string" and string.find(transmogText, "Transmogrified", 1, true) then
+        local line = transmogText
+        if revert then
+            line = line .. "\n|cffffd200Right-Click to revert"
+        end
+        return line
+    end
     local hidden = transmogText == "(Hidden)" or transmogText == "Hidden"
         or (type(transmogText) == "string" and string.find(transmogText, "Hidden", 1, true))
     local line = hidden and "|cffff80ffTransmogrified - Hidden|r" or "|cffff80ffTransmogrified|r"
@@ -44,14 +50,18 @@ end
 local function applyFashionMogLabel(transmogText, revert)
     local tLabel = getglobal(FashionTooltip:GetName() .. "TextLeft2")
     local line = fashionMogLine(transmogText, revert)
-    if not tLabel or not line then
+    if not line then
         return
     end
-    local existing = tLabel:GetText() or ""
-    if existing == "" then
-        tLabel:SetText(line)
+    if tLabel then
+        local existing = tLabel:GetText() or ""
+        if existing == "" then
+            tLabel:SetText(line)
+        else
+            tLabel:SetText(line .. "\n|cffffffff" .. existing)
+        end
     else
-        tLabel:SetText(line .. "\n|cffffffff" .. existing)
+        FashionTooltip:AddLine(line)
     end
 end
 
@@ -70,7 +80,11 @@ function AddButtonOnEnterTooltipFashion(frame, itemLink, TransmogText, revert)
         frame:SetScript("OnEnter", function(self)
             FashionTooltip:SetOwner(this, "ANCHOR_RIGHT", -(this:GetWidth() / 4) + 10, -(this:GetHeight() / 4));
             FashionTooltip:SetHyperlink(string.sub(ex[3], 2, string.len(ex[3])));
-            applyFashionMogLabel(TransmogText, revert)
+            local mogText = TransmogText
+            if not mogText and Transmog.ChromieAppearanceLabelForLink then
+                mogText = Transmog:ChromieAppearanceLabelForLink(itemLink)
+            end
+            applyFashionMogLabel(mogText, revert)
             FashionTooltip:AddLine("");
             FashionTooltip:Show();
         end)
@@ -78,7 +92,11 @@ function AddButtonOnEnterTooltipFashion(frame, itemLink, TransmogText, revert)
         frame:SetScript("OnEnter", function(self)
             FashionTooltip:SetOwner(this, "ANCHOR_RIGHT", -(this:GetWidth() / 4) + 10, -(this:GetHeight() / 4));
             FashionTooltip:SetHyperlink(itemLink);
-            applyFashionMogLabel(TransmogText, revert)
+            local mogText = TransmogText
+            if not mogText and Transmog.ChromieAppearanceLabelForLink then
+                mogText = Transmog:ChromieAppearanceLabelForLink(itemLink)
+            end
+            applyFashionMogLabel(mogText, revert)
             FashionTooltip:Show();
         end)
     end
@@ -86,57 +104,3 @@ function AddButtonOnEnterTooltipFashion(frame, itemLink, TransmogText, revert)
         FashionTooltip:Hide();
     end)
 end
-
-local characterPaperDollFrames = {
-    CharacterHeadSlot,
-    CharacterShoulderSlot,
-    CharacterBackSlot,
-    CharacterChestSlot,
-    CharacterWristSlot,
-    CharacterHandsSlot,
-    CharacterWaistSlot,
-    CharacterLegsSlot,
-    CharacterFeetSlot,
-    CharacterMainHandSlot,
-    CharacterSecondaryHandSlot,
-    CharacterRangedSlot,
-}
-
-EquipTransmogTooltip:SetScript("OnShow", function()
-    if GameTooltip.itemLink then
-
-        if not PaperDollFrame:IsVisible() then
-            return
-        end
-
-        local _, _, itemLink = ChromieTransmogFrame_Find(GameTooltip.itemLink, "(item:%d+:%d+:%d+:%d+)");
-
-        if not itemLink then
-            return
-        end
-
-        for _, frame in ipairs(characterPaperDollFrames) do
-            if GameTooltip:IsOwned(frame) == 1 then
-
-                local itemName = GetItemInfo(itemLink)
-
-                if Transmog.equippedTransmogs[itemName] then
-
-                    local tLabel = getglobal(GameTooltip:GetName() .. "TextLeft2")
-
-                    if tLabel then
-                    end
-
-                    GameTooltip:Show()
-                end
-
-            end
-
-        end
-
-    end
-end)
-
-EquipTransmogTooltip:SetScript("OnHide", function()
-    GameTooltip.itemLink = nil
-end)

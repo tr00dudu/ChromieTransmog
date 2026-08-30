@@ -15,6 +15,25 @@ function Transmog:EquippedItemsChanged()
     return false
 end
 
+-- Returns inventory slot ids whose equipped item id changed since last UI sync.
+function Transmog:ChromieGetEquipSlotsChanged()
+    local changed = {}
+    local _, slotId
+    for _, slotId in pairs(self.inventorySlots) do
+        local link = GetInventoryItemLink("player", slotId)
+        local newId = 0
+        if link then
+            local _, _, eqItemLink = ChromieTransmogFrame_Find(link, "(item:%d+:%d+:%d+:%d+)")
+            newId = eqItemLink and self:IDFromLink(eqItemLink) or 0
+        end
+        local oldId = self.equippedItems[slotId] or 0
+        if newId ~= oldId then
+            table.insert(changed, slotId)
+        end
+    end
+    return changed
+end
+
 -- Pre-caches all currently equipped items into the client item cache.
 function Transmog:CacheEquippedGear()
     for _, InventorySlotId in pairs(self.inventorySlots) do
@@ -28,13 +47,6 @@ end
 function Transmog:CacheOutfitsItems()
     if self.chromieSetItems then
         for _, data in pairs(self.chromieSetItems) do
-            for _, itemId in pairs(data) do
-                self:cacheItem(itemId)
-            end
-        end
-    end
-    if ChromieTransmogOutfits then
-        for _, data in pairs(ChromieTransmogOutfits) do
             for _, itemId in pairs(data) do
                 self:cacheItem(itemId)
             end

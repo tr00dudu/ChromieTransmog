@@ -110,78 +110,16 @@
             </DressUpModel>
         </Frames>
     </Frame>
-    <Frame name="TransmogWonItemTemplate" virtual="true">
-        <Size>
-            <AbsDimension x="512" y="128"/>
-        </Size>
-        <Anchors>
-            <Anchor point="CENTER">
-                <Offset>
-                    <AbsDimension x="0" y="-200"/>
-                </Offset>
-            </Anchor>
-        </Anchors>
-        <Layers>
-            <Layer level="OVERLAY">
-                <FontString name="$parentItemName" inherits="GameFontNormalLarge" justifyH="LEFT"
-                            text="|cffa335eeChromatically Tempered Sword">
-                    <Anchors>
-                        <Anchor point="TOPLEFT">
-                            <Offset>
-                                <AbsDimension x="208" y="-55"/>
-                            </Offset>
-                        </Anchor>
-                    </Anchors>
-                    <Size>
-                        <AbsDimension x="160" y="35"/>
-                    </Size>
-                </FontString>
-            </Layer>
-        </Layers>
-        <Frames>
-            <Button name="$parentIcon" inherits="UIPanelButtonTemplate">
-                <NormalTexture name="$parentNormalTexture" file="Interface\Icons\inv_sword_51">
-                    <Size>
-                        <AbsDimension x="46" y="46"/>
-                    </Size>
-                    <Anchors>
-                        <Anchor point="CENTER">
-                            <Offset>
-                                <AbsDimension x="0" y="0"/>
-                            </Offset>
-                        </Anchor>
-                    </Anchors>
-                </NormalTexture>
-                <PushedTexture inherits=""/>
-                <DisabledTexture inherits=""/>
-                <HighlightTexture inherits=""/>
-                <Backdrop bgFile="Interface\Tooltips\U1I-Tooltip-Background" tile="true">
-                </Backdrop>
-                <Size>
-                    <AbsDimension x="46" y="46"/>
-                </Size>
-                <Anchors>
-                    <Anchor point="LEFT">
-                        <Offset>
-                            <AbsDimension x="148" y="0"/>
-                        </Offset>
-                    </Anchor>
-                </Anchors>
-                <Scripts>
-                </Scripts>
-            </Button>
-        </Frames>
-    </Frame>
     <StatusBar name="TransmogCollectedStatusBarTemplate" virtual="true" drawLayer="BACKGROUND" minValue="0" maxValue="1"
                defaultValue="0">
         <Size>
-            <AbsDimension x="271" y="15"/>
+            <AbsDimension x="100" y="15"/>
         </Size>
         <Layers>
             <Layer level="ARTWORK">
-                <FontString name="$parentCollectedStatus" inherits="GameFontHighlightSmall" text="45/150">
+                <FontString name="$parentCollectedStatus" inherits="GameFontHighlightSmall" text="Collected: 0">
                     <Size>
-                        <AbsDimension x="128" y="0"/>
+                        <AbsDimension x="96" y="0"/>
                     </Size>
                 </FontString>
             </Layer>
@@ -202,7 +140,7 @@
         <Frames>
             <Button name="$parentBorder">
                 <Size>
-                    <AbsDimension x="281" y="32"/>
+                    <AbsDimension x="108" y="22"/>
                 </Size>
                 <Anchors>
                     <Anchor point="LEFT">
@@ -417,83 +355,6 @@
             <AbsDimension x="20" y="20"/>
         </Size>
     </Button>
-    <Frame name="NewTransmogAlertFrame" hidden="false" toplevel="true" parent="UIParent" movable="true"
-           enableMouse="true">
-        <Size>
-            <AbsDimension x="250" y="20"/>
-        </Size>
-        <Layers>
-            <Layer level="OVERLAY">
-                <FontString name="$parentTitle" inherits="GameFontNormal" text="[New Transmog] ANCHOR" hidden="true">
-                    <Anchors>
-                        <Anchor point="CENTER">
-                            <Offset>
-                                <AbsDimension x="0" y="0"/>
-                            </Offset>
-                        </Anchor>
-                    </Anchors>
-                </FontString>
-            </Layer>
-        </Layers>
-        <Anchors>
-            <Anchor point="BOTTOM">
-                <Offset>
-                    <AbsDimension x="0" y="300"/>
-                </Offset>
-            </Anchor>
-        </Anchors>
-        <Frames>
-            <Button name="$parentTestPlacement" inherits="UIPanelButtonTemplate2" text="Test" hidden="true">
-                <Size>
-                    <AbsDimension x="50" y="40"/>
-                </Size>
-                <Anchors>
-                    <Anchor point="LEFT">
-                        <Offset>
-                            <AbsDimension x="0" y="0"/>
-                        </Offset>
-                    </Anchor>
-                </Anchors>
-                <Scripts>
-                    <OnClick>
-                        Transmog_testNewTransmogAlert()
-                    </OnClick>
-                </Scripts>
-            </Button>
-            <Button name="$parentClosePlacement" inherits="UIPanelButtonTemplate2" text="Close" hidden="true">
-                <Size>
-                    <AbsDimension x="50" y="40"/>
-                </Size>
-                <Anchors>
-                    <Anchor point="RIGHT">
-                        <Offset>
-                            <AbsDimension x="0" y="0"/>
-                        </Offset>
-                    </Anchor>
-                </Anchors>
-                <Scripts>
-                    <OnClick>
-                        Transmog_close_placement()
-                    </OnClick>
-                </Scripts>
-            </Button>
-        </Frames>
-        <Scripts>
-            <OnLoad>
-                this:RegisterForDrag("LeftButton");
-                this:SetMovable(1);
-                this:SetUserPlaced(true);
-            </OnLoad>
-            <OnDragStart>
-                this:StartMoving();
-                this.isMoving = true;
-            </OnDragStart>
-            <OnDragStop>
-                this:StopMovingOrSizing();
-                this.isMoving = false;
-            </OnDragStop>
-        </Scripts>
-    </Frame>
     <Frame name="ChromieTransmogFrame" hidden="true" toplevel="true" parent="UIParent" movable="true" enableMouse="true">
         <Size>
             <AbsDimension x="750" y="506"/>
@@ -559,7 +420,7 @@
                         </Anchor>
                     </Anchors>
                 </Texture>
-                <Texture name="$parentSplash" file="Interface\AddOns\ChromieTransmog\assets\splash">
+                <Texture name="$parentSplash" file="Interface\AddOns\ChromieTransmog\assets\splash" hidden="true">
                     <Size>
                         <AbsDimension x="512" y="512"/>
                     </Size>
@@ -583,7 +444,7 @@
                         </Anchor>
                     </Anchors>
                 </FontString>
-                <FontString name="$parentInstructions" justifyH="center" inherits="GameFontNormal" text="">
+                <FontString name="$parentInstructions" justifyH="center" inherits="GameFontNormal" text="" hidden="true">
                     <Size>
                         <AbsDimension x="370" y="36"/>
                     </Size>
@@ -604,6 +465,15 @@
                         <Anchor point="CENTER" relativeTo="$parentTitleText" relativePoint="TOP">
                             <Offset>
                                 <AbsDimension x="110" y="-250"/>
+                            </Offset>
+                        </Anchor>
+                    </Anchors>
+                </FontString>
+                <FontString name="$parentCollectedText" inherits="GameFontHighlightSmall" text="" hidden="true">
+                    <Anchors>
+                        <Anchor point="TOPRIGHT" relativePoint="TOPRIGHT">
+                            <Offset>
+                                <AbsDimension x="-58" y="-52"/>
                             </Offset>
                         </Anchor>
                     </Anchors>
@@ -691,7 +561,7 @@
                 </Anchors>
                 <Scripts>
                     <OnClick>
-                        Transmog_ShowManageSets()
+                        Transmog_switchTab('sets')
                     </OnClick>
                 </Scripts>
             </Button>
@@ -750,7 +620,7 @@
                     </OnClick>
                 </Scripts>
             </Button>
-            <Button name="$parentItemsButton" inherits="UIPanelButtonTemplate" text="">
+            <Button name="$parentItemsButton" inherits="UIPanelButtonTemplate" text="Items">
                 <NormalTexture name="$parentNormalTexture" file="Interface\AddOns\ChromieTransmog\assets\tab_active">
                     <Size>
                         <AbsDimension x="128" y="32"/>
@@ -776,12 +646,12 @@
                     </Anchors>
                 </PushedTexture>
                 <Size>
-                    <AbsDimension x="81" y="32"/>
+                    <AbsDimension x="76" y="32"/>
                 </Size>
                 <Anchors>
                     <Anchor point="TOPLEFT">
                         <Offset>
-                            <AbsDimension x="250" y="-47"/>
+                            <AbsDimension x="248" y="-47"/>
                         </Offset>
                     </Anchor>
                 </Anchors>
@@ -791,16 +661,88 @@
                     </OnClick>
                 </Scripts>
             </Button>
-            <StatusBar name="$parentCollected" inherits="TransmogCollectedStatusBarTemplate" minValue="0" maxValue="1"
-                       defaultValue="1" id="1">
+            <Button name="$parentSetsButton" inherits="UIPanelButtonTemplate" text="Sets">
+                <NormalTexture name="$parentNormalTexture" file="Interface\AddOns\ChromieTransmog\assets\tab_active">
+                    <Size>
+                        <AbsDimension x="128" y="32"/>
+                    </Size>
+                    <Anchors>
+                        <Anchor point="TOPLEFT">
+                            <Offset>
+                                <AbsDimension x="0" y="0"/>
+                            </Offset>
+                        </Anchor>
+                    </Anchors>
+                </NormalTexture>
+                <PushedTexture name="$parentPushedTexture" file="Interface\AddOns\ChromieTransmog\assets\tab_active">
+                    <Size>
+                        <AbsDimension x="128" y="32"/>
+                    </Size>
+                    <Anchors>
+                        <Anchor point="TOPLEFT">
+                            <Offset>
+                                <AbsDimension x="0" y="0"/>
+                            </Offset>
+                        </Anchor>
+                    </Anchors>
+                </PushedTexture>
+                <Size>
+                    <AbsDimension x="76" y="32"/>
+                </Size>
                 <Anchors>
-                    <Anchor point="TOPLEFT">
+                    <Anchor point="LEFT" relativeTo="$parentItemsButton" relativePoint="RIGHT">
                         <Offset>
-                            <AbsDimension x="440" y="-49"/>
+                            <AbsDimension x="10" y="0"/>
                         </Offset>
                     </Anchor>
                 </Anchors>
-            </StatusBar>
+                <Scripts>
+                    <OnClick>
+                        Transmog_switchTab('sets')
+                    </OnClick>
+                </Scripts>
+            </Button>
+            <Button name="$parentCacheButton" inherits="UIPanelButtonTemplate" text="Cache">
+                <NormalTexture name="$parentNormalTexture" file="Interface\AddOns\ChromieTransmog\assets\tab_active">
+                    <Size>
+                        <AbsDimension x="128" y="32"/>
+                    </Size>
+                    <Anchors>
+                        <Anchor point="TOPLEFT">
+                            <Offset>
+                                <AbsDimension x="0" y="0"/>
+                            </Offset>
+                        </Anchor>
+                    </Anchors>
+                </NormalTexture>
+                <PushedTexture name="$parentPushedTexture" file="Interface\AddOns\ChromieTransmog\assets\tab_active">
+                    <Size>
+                        <AbsDimension x="128" y="32"/>
+                    </Size>
+                    <Anchors>
+                        <Anchor point="TOPLEFT">
+                            <Offset>
+                                <AbsDimension x="0" y="0"/>
+                            </Offset>
+                        </Anchor>
+                    </Anchors>
+                </PushedTexture>
+                <Size>
+                    <AbsDimension x="76" y="32"/>
+                </Size>
+                <Anchors>
+                    <Anchor point="LEFT" relativeTo="$parentSetsButton" relativePoint="RIGHT">
+                        <Offset>
+                            <AbsDimension x="10" y="0"/>
+                        </Offset>
+                    </Anchor>
+                </Anchors>
+                <Scripts>
+                    <OnClick>
+                        Transmog_switchTab('cache')
+                    </OnClick>
+                </Scripts>
+            </Button>
             <Button name="$parentCloseButton" inherits="UIPanelCloseButton">
                 <Anchors>
                     <Anchor point="CENTER" relativePoint="TOPRIGHT">
