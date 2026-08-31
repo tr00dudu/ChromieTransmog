@@ -1,4 +1,9 @@
 local Transmog = _G.ChromieTransmog
+
+-- 1 = print addon messages to chat (Chat / twfdebug / twferror). 0 = silent.
+Transmog.CHAT_PRINTS = 0
+Transmog.debug = (Transmog.CHAT_PRINTS == 1)
+
 local _, race = UnitRace('player')
 local _, class = UnitClass('player')
 

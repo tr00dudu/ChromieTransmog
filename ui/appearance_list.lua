@@ -191,7 +191,7 @@ function Transmog:renderAvailableTransmogs(slot, itemClass)
                 if self.race == 'dwarf' then
                     Y = Y + 0.5
                 end
-                model:SetPosition(Z + 5.8, X, Y - 2.2)
+                self:ChromieLookSetPosition(model, Z + 5.8, X, Y - 2.2)
             end
 
             if self.currentTransmogSlot == self.inventorySlots['ShoulderSlot'] then
@@ -205,12 +205,12 @@ function Transmog:renderAvailableTransmogs(slot, itemClass)
                 if self.race == 'nightelf' then
                     Z = Z - 1
                 end
-                model:SetPosition(Z + 5.8, X + 0.5, Y - 1.7)
+                self:ChromieLookSetPosition(model, Z + 5.8, X + 0.5, Y - 1.7)
             end
 
             if self.currentTransmogSlot == self.inventorySlots['BackSlot'] then
                 model:SetRotation(3.2)
-                model:SetPosition(Z + 3.8, X, Y - 0.7)
+                self:ChromieLookSetPosition(model, Z + 3.8, X, Y - 0.7)
             end
 
             if self.currentTransmogSlot == self.inventorySlots['ChestSlot'] then
@@ -224,7 +224,7 @@ function Transmog:renderAvailableTransmogs(slot, itemClass)
                     Z = Z - 0.5
                 end
                 model:SetRotation(0.61)
-                model:SetPosition(Z + 5.8, X + 0.1, Y - 1.2)
+                self:ChromieLookSetPosition(model, Z + 5.8, X + 0.1, Y - 1.2)
             end
 
             if self.currentTransmogSlot == self.inventorySlots['WristSlot'] then
@@ -246,7 +246,7 @@ function Transmog:renderAvailableTransmogs(slot, itemClass)
                     Y = Y + 1.5
                     Z = Z - 0.5
                 end
-                model:SetPosition(Z + 5.8, X + 0.4, Y - 0.3)
+                self:ChromieLookSetPosition(model, Z + 5.8, X + 0.4, Y - 0.3)
             end
 
             if self.currentTransmogSlot == self.inventorySlots['HandsSlot'] then
@@ -269,7 +269,7 @@ function Transmog:renderAvailableTransmogs(slot, itemClass)
                     Y = Y + 1.5
                     Z = Z - 0.5
                 end
-                model:SetPosition(Z + 5.8, X + 0.4, Y - 0.3)
+                self:ChromieLookSetPosition(model, Z + 5.8, X + 0.4, Y - 0.3)
             end
 
             if self.currentTransmogSlot == self.inventorySlots['WaistSlot'] then
@@ -285,7 +285,7 @@ function Transmog:renderAvailableTransmogs(slot, itemClass)
                     Y = Y + 1.5
                     Z = Z - 0.5
                 end
-                model:SetPosition(Z + 5.8, X, Y - 0.4)
+                self:ChromieLookSetPosition(model, Z + 5.8, X, Y - 0.4)
             end
 
             if self.currentTransmogSlot == self.inventorySlots['LegsSlot'] then
@@ -297,7 +297,7 @@ function Transmog:renderAvailableTransmogs(slot, itemClass)
                 if self.race == 'dwarf' then
                     Y = Y - 0.9
                 end
-                model:SetPosition(Z + 3.8, X, Y + 0.9)
+                self:ChromieLookSetPosition(model, Z + 3.8, X, Y + 0.9)
             end
 
             if self.currentTransmogSlot == self.inventorySlots['FeetSlot'] then
@@ -309,7 +309,7 @@ function Transmog:renderAvailableTransmogs(slot, itemClass)
                 if self.race == 'dwarf' then
                     Y = Y - 0.6
                 end
-                model:SetPosition(Z + 4.8, X, Y + 1.5)
+                self:ChromieLookSetPosition(model, Z + 4.8, X, Y + 1.5)
             end
 
             if self.currentTransmogSlot == self.inventorySlots['MainHandSlot'] then
@@ -320,12 +320,12 @@ function Transmog:renderAvailableTransmogs(slot, itemClass)
                 if self.race == 'dwarf' then
                     Y = Y - 1
                 end
-                model:SetPosition(Z + 3.8, X, Y + 0.4)
+                self:ChromieLookSetPosition(model, Z + 3.8, X, Y + 0.4)
             end
 
             if self.currentTransmogSlot == self.inventorySlots['SecondaryHandSlot'] then
                 model:SetRotation(-0.61)
-                model:SetPosition(Z + 3.8, X, Y)
+                self:ChromieLookSetPosition(model, Z + 3.8, X, Y)
                 if self.race == 'gnome' then
                     Y = Y - 1.5
                 end
@@ -348,7 +348,7 @@ function Transmog:renderAvailableTransmogs(slot, itemClass)
                 if self.race == 'gnome' then
                     Y = Y - 1.5
                 end
-                model:SetPosition(Z + 3.8, X, Y)
+                self:ChromieLookSetPosition(model, Z + 3.8, X, Y)
             end
 
             model:Undress()
@@ -399,5 +399,8 @@ function Transmog:renderAvailableTransmogs(slot, itemClass)
 
     if self.currentTransmogSlotName then
         getglobal(self.currentTransmogSlotName .. 'BorderSelected'):Show()
+    end
+    if self.ChromieLookPreviewRefreshPanel then
+        self:ChromieLookPreviewRefreshPanel()
     end
 end

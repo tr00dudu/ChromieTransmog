@@ -81,6 +81,10 @@ function ChromieTransmogFrame_OnShow()
 
     Transmog:Reset()
 
+    if Transmog.ChromieLookPreviewEnsure then
+        Transmog:ChromieLookPreviewEnsure()
+    end
+
     if Transmog.ChromieCacheSyncMaybePrompt then
         Transmog:ChromieCacheSyncMaybePrompt()
     end
@@ -154,6 +158,9 @@ function Transmog_OnHide()
         Transmog:ChromieCacheSyncStop()
     elseif Transmog.ChromieCacheSyncHidePanel then
         Transmog:ChromieCacheSyncHidePanel()
+    end
+    if Transmog.ChromieLookPreviewHide then
+        Transmog:ChromieLookPreviewHide()
     end
     Transmog.chromieScanQueue = nil
     Transmog.chromieSessionScanned = nil

@@ -12,6 +12,9 @@ local VENDOR_SKIP = {
 }
 
 function Transmog:Chat(msg)
+    if self.CHAT_PRINTS ~= 1 then
+        return
+    end
     DEFAULT_CHAT_FRAME:AddMessage("|cff69ccf0[ChromieTransmog]|r " .. tostring(msg))
 end
 

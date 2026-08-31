@@ -18,6 +18,7 @@ features\apply_transmog.lua
 features\outfits.lua
 features\slash_commands.lua
 ui\lifecycle.lua
+ui\look_preview.lua
 ui\appearance_list.lua
 ui\slots_model.lua
 ui\cache_tab.lua

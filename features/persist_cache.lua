@@ -33,6 +33,10 @@ function Transmog:ChromieEnsurePersistDB()
     if not ChromieTransmogDB.chars then
         ChromieTransmogDB.chars = {}
     end
+    if not ChromieTransmogDB.lookPreview or type(ChromieTransmogDB.lookPreview.z) == "number" then
+        -- Race -> slot -> {z,x,y}. Drop legacy global {z,x,y}.
+        ChromieTransmogDB.lookPreview = {}
+    end
 end
 
 function Transmog:ChromiePersistChar()
