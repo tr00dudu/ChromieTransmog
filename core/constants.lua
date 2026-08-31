@@ -9,6 +9,25 @@ if Transmog.race ~= 'human' and Transmog.race ~= 'gnome' and Transmog.race ~= 'd
     Transmog.faction = 'H'
 end
 
+-- Preview backdrop: assets/transmogbackground<key>.blp
+-- UnitRace "Scourge" → undead file; unknown races fall back to human.
+local RACE_BACKGROUND = {
+    human = 'human',
+    dwarf = 'dwarf',
+    gnome = 'gnome',
+    nightelf = 'nightelf',
+    bloodelf = 'bloodelf',
+    draenei = 'draenei',
+    orc = 'orc',
+    tauren = 'tauren',
+    troll = 'troll',
+    undead = 'undead',
+    scourge = 'undead',
+    goblin = 'goblin',
+    highelf = 'highelf',
+}
+Transmog.raceBackground = RACE_BACKGROUND[Transmog.race] or 'human'
+
 -- azerothcore/mod-transmog default NPCs (ChromieCraft Warpweaver / portable pet).
 Transmog.CHROMIE_NPC_IDS = {
     [190010] = true,

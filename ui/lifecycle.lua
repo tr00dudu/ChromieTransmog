@@ -225,7 +225,11 @@ function Transmog:Reset(once)
         self:transmogStatus()
     end
 
-    ChromieTransmogFrameRaceBackground:SetTexture("Interface\\AddOns\\ChromieTransmog\\assets\\transmogbackground" .. self.race)
+    local raceBg = ChromieTransmogFrameRaceBackground
+    raceBg:SetTexture("Interface\\AddOns\\ChromieTransmog\\assets\\transmogbackground" .. (self.raceBackground or 'human'))
+    raceBg:SetWidth(442)
+    -- Draenei art sits short on the 512 canvas; bump display height 5%.
+    raceBg:SetHeight((self.raceBackground == 'draenei') and (470) or 442)
 
     self.currentPage = 1
     self.currentTransmogSlot = nil
