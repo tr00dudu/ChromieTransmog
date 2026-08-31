@@ -15,9 +15,18 @@ function Transmog:ChromieCacheTabEnsure()
     local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     title:SetPoint("TOPLEFT", 8, -4)
     title:SetText("Cache")
+    f.title = title
+
+    local intro = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    intro:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -6)
+    intro:SetWidth(400)
+    intro:SetJustifyH("LEFT")
+    intro:SetNonSpaceWrap(true)
+    intro:SetText("This addon needs to cache your collected appearances to work. Please follow instructions below.")
+    f.intro = intro
 
     local summary = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    summary:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -6)
+    summary:SetPoint("TOPLEFT", intro, "BOTTOMLEFT", 0, -8)
     summary:SetWidth(400)
     summary:SetJustifyH("LEFT")
     f.summary = summary
@@ -47,13 +56,17 @@ function Transmog:ChromieCacheTabEnsure()
     drop:SetPoint("BOTTOMLEFT", 8, 8)
     drop:SetText("Drop cache")
     drop:SetScript("OnClick", function()
-        Transmog:ChromiePersistDropUnlocks()
-        Transmog.chromieCache = {}
-        Transmog.chromieCacheIcon = {}
-        Transmog.chromieSessionScanned = {}
-        Transmog.chromieScanQueue = nil
+        if Transmog.ChromiePersistDropAll then
+            Transmog:ChromiePersistDropAll()
+        else
+            Transmog:ChromiePersistDropUnlocks()
+            Transmog.chromieCache = {}
+            Transmog.chromieCacheIcon = {}
+            Transmog.chromieSessionScanned = {}
+            Transmog.chromieScanQueue = nil
+        end
         Transmog:ChromieCacheTabRefresh(true)
-        Transmog:Chat("Cache cleared. All slots need a scan.")
+        Transmog:Chat("Cache cleared (unlocks, owned mogs, and set piece cache). Warpweaver sets are unchanged. No reload needed.")
     end)
     drop:SetFrameLevel(f:GetFrameLevel() + 4)
     f.drop = drop
@@ -64,10 +77,14 @@ function Transmog:ChromieCacheTabEnsure()
     scanAll:SetPoint("LEFT", drop, "RIGHT", 6, 0)
     scanAll:SetText("Scan all")
     scanAll:SetScript("OnClick", function()
-        Transmog.chromieSessionScanned = {}
-        Transmog.chromieScanQueue = {}
-        if Transmog.ChromieQueueUnscannedSessionSlots then
-            Transmog:ChromieQueueUnscannedSessionSlots()
+        if Transmog.ChromieStartScanAll then
+            Transmog:ChromieStartScanAll()
+        else
+            Transmog.chromieSessionScanned = {}
+            Transmog.chromieScanQueue = {}
+            if Transmog.ChromieQueueUnscannedSessionSlots then
+                Transmog:ChromieQueueUnscannedSessionSlots()
+            end
         end
     end)
     scanAll:SetFrameLevel(f:GetFrameLevel() + 4)
@@ -191,6 +208,9 @@ function Transmog:ChromieCacheSlotStatus(slot)
 end
 
 function Transmog:ChromieCacheTabRefresh(force)
+    if self.ChromieHomeTabRefresh then
+        self:ChromieHomeTabRefresh()
+    end
     local f = self.cacheTabFrame
     if not f then
         return
@@ -202,6 +222,7 @@ function Transmog:ChromieCacheTabRefresh(force)
     if not char then
         f.summary:SetText("No character data.")
         f.reportText:SetText("")
+        self:ChromieCacheTabSetIntroVisible(true)
         return
     end
 
@@ -215,16 +236,12 @@ function Transmog:ChromieCacheTabRefresh(force)
     while self.CACHE_TAB_SLOTS[i] do
         local slot = self.CACHE_TAB_SLOTS[i]
         local label, status = self:ChromieCacheSlotStatus(slot)
-        if status == "n/a" then
-            -- relic ranged slot (totem/libram/idol/sigil)
-        elseif not GetInventoryItemLink("player", slot) then
-            -- skip empty slots in the report
+        if self:ChromieCacheSlotIsReportIssue(slot) then
+            table.insert(needLabels, label)
+            issueCount = issueCount + 1
         elseif status == "ok" then
             table.insert(okLabels, label)
             okCount = okCount + 1
-        else
-            table.insert(needLabels, label)
-            issueCount = issueCount + 1
         end
         i = i + 1
     end
@@ -234,9 +251,12 @@ function Transmog:ChromieCacheTabRefresh(force)
     end
     if needLabels[1] then
         table.insert(lines, table.concat(needLabels, ", ") .. ": needs scan")
+        table.insert(lines, "")
+        table.insert(lines, "|cffaaaaaaUnmog the slot and press Scan all, or scan twice with two differently transmogged items in that slot (this tab auto-scans on item equip).|r")
     end
 
     local setLines = {}
+    local setsUncached = 0
     if char.sets and char.sets.items then
         local name, items
         for name, items in pairs(char.sets.items) do
@@ -250,6 +270,7 @@ function Transmog:ChromieCacheTabRefresh(force)
         while char.sets.unknown[u] do
             table.insert(setLines, "Set \"" .. char.sets.unknown[u] .. "\": not cached")
             issueCount = issueCount + 1
+            setsUncached = setsUncached + 1
             u = u + 1
         end
     end
@@ -268,6 +289,7 @@ function Transmog:ChromieCacheTabRefresh(force)
         if not found then
             table.insert(setLines, "Set \"" .. tostring(self.lastAppliedSetName) .. "\": not cached")
             issueCount = issueCount + 1
+            setsUncached = setsUncached + 1
         end
     end
     if setLines[1] then
@@ -278,6 +300,10 @@ function Transmog:ChromieCacheTabRefresh(force)
         while setLines[s] do
             table.insert(lines, setLines[s])
             s = s + 1
+        end
+        if setsUncached > 0 then
+            table.insert(lines, "")
+            table.insert(lines, "|cffaaaaaaApply the set from this window (Quick Sets dropdown or Home tab) to cache it. Do that after the slots above are cached, or the snapshot can be wrong.|r")
         end
     end
 
@@ -290,6 +316,8 @@ function Transmog:ChromieCacheTabRefresh(force)
     else
         f.summary:SetText("No equipped slots to cache.")
     end
+
+    self:ChromieCacheTabSetIntroVisible(issueCount > 0)
 
     local body = table.concat(lines, "\n")
     f.reportText:SetText(body)
@@ -304,22 +332,55 @@ function Transmog:ChromieCacheTabRefresh(force)
     end
 end
 
-function Transmog:ChromieCacheTabNeedsAttention()
-    local i = 1
-    while self.CACHE_TAB_SLOTS[i] do
-        local slot = self.CACHE_TAB_SLOTS[i]
-        local link = GetInventoryItemLink("player", slot)
-        if link then
-            local _, status = self:ChromieCacheSlotStatus(slot)
-            if status ~= "ok" then
-                return true
-            end
-        end
-        i = i + 1
+function Transmog:ChromieCacheTabSetIntroVisible(show)
+    local f = self.cacheTabFrame
+    if not f or not f.intro or not f.summary then
+        return
     end
+    f.summary:ClearAllPoints()
+    if show then
+        f.intro:Show()
+        f.summary:SetPoint("TOPLEFT", f.intro, "BOTTOMLEFT", 0, -8)
+    else
+        f.intro:Hide()
+        if f.title then
+            f.summary:SetPoint("TOPLEFT", f.title, "BOTTOMLEFT", 0, -6)
+        else
+            f.summary:SetPoint("TOPLEFT", 8, -28)
+        end
+    end
+end
+
+-- Same skip rules as the Cache tab report: ignore relics and empty slots.
+function Transmog:ChromieCacheSlotIsReportIssue(slot)
+    local _, status = self:ChromieCacheSlotStatus(slot)
+    if status == "n/a" then
+        return false
+    end
+    if not GetInventoryItemLink("player", slot) then
+        return false
+    end
+    return status ~= "ok"
+end
+
+function Transmog:ChromieCacheHasUncachedSet()
     local char = self:ChromiePersistChar()
     if char and char.sets and char.sets.unknown and char.sets.unknown[1] then
         return true
     end
+    if self.lastAppliedSetName and self.ChromieSetIsCached and not self:ChromieSetIsCached(self.lastAppliedSetName) then
+        return true
+    end
     return false
+end
+
+function Transmog:ChromieCacheTabNeedsAttention()
+    local i = 1
+    while self.CACHE_TAB_SLOTS[i] do
+        if self:ChromieCacheSlotIsReportIssue(self.CACHE_TAB_SLOTS[i]) then
+            return true
+        end
+        i = i + 1
+    end
+    return self:ChromieCacheHasUncachedSet()
 end

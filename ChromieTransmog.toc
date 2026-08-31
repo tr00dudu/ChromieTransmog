@@ -21,6 +21,8 @@ ui\lifecycle.lua
 ui\appearance_list.lua
 ui\slots_model.lua
 ui\cache_tab.lua
+ui\home_tab.lua
+ui\about_tab.lua
 ui\costs.lua
 ui\tooltips.lua
 ui\animations.lua

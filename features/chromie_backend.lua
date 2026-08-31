@@ -246,20 +246,6 @@ function Transmog:ChromieParseGossipItemId(text, stripped)
     if id and id > 1 then
         return id
     end
-    stripped = stripped or self:ChromieStrip(text)
-    if not stripped or stripped == "" then
-        return nil
-    end
-    local lower = string.lower(stripped)
-    if string.find(lower, "next page", 1, true) or string.find(lower, "previous page", 1, true)
-        or string.find(lower, "back...", 1, true) or lower == "search"
-        or string.find(lower, "hide slot", 1, true) or string.find(lower, "remove all", 1, true) then
-        return nil
-    end
-    local _, link = GetItemInfo(stripped)
-    if link and self.IDFromLink then
-        return self:IDFromLink(link)
-    end
     return nil
 end
 
@@ -471,15 +457,10 @@ function Transmog:ChromieIngestMainMenuStatus(options)
                 end
             elseif kind == "empty" then
                 self.transmogGossipIcon[slot] = nil
-                -- Only keep mog if owned[] knows THIS equipped piece is mogged.
-                local keepApplied = false
-                local applied = self.ChromiePersistGetApplied and self:ChromiePersistGetApplied(slot)
-                if applied and applied > 1 then
-                    keepApplied = true
-                elseif applied == self.HIDDEN_ITEM_ID then
-                    keepApplied = true
-                end
-                if not keepApplied and self.ChromieAppliedSet then
+                -- Paperdoll icon: Warpweaver says this slot is not mogged.
+                -- Do not keep session fromServer / owned[] from a previous set.
+                detected = 0
+                if self.ChromieAppliedSet then
                     self:ChromieAppliedSet(slot, 0)
                 end
             else
@@ -818,6 +799,15 @@ function Transmog:ChromieFinishLoad()
         self.chromieScanQueuePending = true
     elseif not setCachePending and self.chromieScanQueue and self.chromieScanQueue[1] then
         self.chromieScanQueuePending = true
+    elseif not setCachePending and self.chromieEmptyCacheScan and not self.chromieScanRescanDone then
+        -- Same as clicking Scan all again: mogged slots can go OK once cache is filled.
+        self.chromieScanRescanDone = true
+        if self.ChromieQueueUnscannedSessionSlots then
+            self:ChromieQueueUnscannedSessionSlots(true)
+        end
+        if self.chromieScanQueue and self.chromieScanQueue[1] then
+            self.chromieScanQueuePending = true
+        end
     end
     if not self:ChromieClickBack("load-done") then
         if setCachePending and self.setCacheJob and self.setCacheJob.pendingNext and self.ChromieDeferSetCacheScanNext then
@@ -1139,6 +1129,9 @@ function Transmog:ChromieHandleApplyGossip()
             self.chromieRemoveAll = nil
             self.chromieJob = "open"
             self:calculateCost()
+            if self.ChromiePromptFinish then
+                self:ChromiePromptFinish()
+            end
             return
         end
         if self:ChromieClickBack("remove-all-need-main") then
@@ -1148,6 +1141,9 @@ function Transmog:ChromieHandleApplyGossip()
         self.chromieRemoveAll = nil
         self.chromieJob = "open"
         self:calculateCost()
+        if self.ChromiePromptFinish then
+            self:ChromiePromptFinish()
+        end
         return
     end
 
@@ -1259,18 +1255,16 @@ function Transmog:ChromieIsSetJob()
 end
 
 function Transmog:ChromieIsSetNameOption(opt)
-    if not opt or opt.itemId then
+    if not opt then
         return false
     end
     local flags = self:ChromieOptionFlags(opt)
-    if flags.nav or flags.saveSet or flags.useSet or flags.deleteSet or flags.hide or flags.remove or flags.search or flags.slot then
+    if flags.nav or flags.saveSet or flags.useSet or flags.deleteSet
+        or flags.hide or flags.remove or flags.search or flags.manageSets then
         return false
     end
     local lower = string.lower(opt.text or "")
-    if string.find(lower, "statue_02", 1, true) then
-        return true
-    end
-    return false
+    return string.find(lower, "statue_02", 1, true) and true or false
 end
 
 function Transmog:ChromieGossipKind()
@@ -1444,14 +1438,18 @@ end
 
 function Transmog:ChromieScrapeSetNames()
     local options = self.chromieLastOptions or self:ChromieGetOptions()
-    self.chromieSets = {}
+    local scraped = {}
     local i = 1
     while options[i] do
         if self:ChromieIsSetNameOption(options[i]) then
-            table.insert(self.chromieSets, options[i].stripped)
+            table.insert(scraped, options[i].stripped)
         end
         i = i + 1
     end
+    if not scraped[1] then
+        return
+    end
+    self.chromieSets = scraped
     if self.ChromiePersistSetNames then
         self:ChromiePersistSetNames(self.chromieSets)
     end
@@ -1459,6 +1457,11 @@ end
 
 function Transmog:ChromieStoreSetItems(name, items)
     if not name then
+        return
+    end
+    -- Set-view scrape can be empty after reload (GetItemInfo cold). Never
+    -- replace a cached slot map with that scrape.
+    if self.ChromieSetIsCached and self:ChromieSetIsCached(name) then
         return
     end
     if not self.chromieSetItems then
@@ -1517,28 +1520,47 @@ function Transmog:ChromieFinishSetJob()
         self:ChromieEnsureSlot(queued)
         return
     end
+    if self.chromieScanQueue and self.chromieScanQueue[1] then
+        if self.ChromieDeferProcessScanQueue then
+            self:ChromieDeferProcessScanQueue()
+        elseif self.ChromieProcessScanQueue then
+            self:ChromieProcessScanQueue()
+        end
+        return
+    end
+    if self.ChromieTryCacheUnknownSets and self:ChromieTryCacheUnknownSets() then
+        return
+    end
     if self.ChromieCacheSyncMaybePrompt then
         self:ChromieCacheSyncMaybePrompt()
     end
 end
 
 function Transmog:ChromieApplySetItemsLocally(name)
-    local items = self.chromieSetItems and self.chromieSetItems[name]
+    local items = self.ChromieSetItemsForName and self:ChromieSetItemsForName(name)
     if not items then
-        return
+        items = self.chromieSetItems and self.chromieSetItems[name]
     end
-    local _, slot
-    for _, slot in pairs(self.inventorySlots) do
-        self.transmogStatusFromServer[slot] = 0
-        self.transmogStatusToServer[slot] = 0
-    end
-    local itemId
-    for slot, itemId in pairs(items) do
-        if type(slot) == "number" and itemId then
-            self.transmogStatusFromServer[slot] = itemId
-            self.transmogStatusToServer[slot] = itemId
-            if itemId > 1 and self.cacheItem then
-                self:cacheItem(itemId)
+    if items then
+        local slot, itemId
+        for slot, itemId in pairs(items) do
+            slot = tonumber(slot)
+            itemId = tonumber(itemId)
+            if slot and itemId and (itemId > 1 or itemId == self.HIDDEN_ITEM_ID) then
+                -- Cached set maps can include slots from a previous snapshot.
+                -- Only stamp slots gossip/live still report as mogged.
+                local have = self.transmogStatusFromServer and self.transmogStatusFromServer[slot]
+                local gossip = self.transmogGossipIcon and self.transmogGossipIcon[slot]
+                local liveMog = self.ChromieSlotTextureIsMogged and self:ChromieSlotTextureIsMogged(slot)
+                local liveHidden = self.ChromieSlotTextureIsHidden and self:ChromieSlotTextureIsHidden(slot)
+                if have == self.HIDDEN_ITEM_ID or have == self.UNKNOWN_MOG_ID
+                    or (have and have > 1) or gossip or liveMog or liveHidden then
+                    self.transmogStatusFromServer[slot] = itemId
+                    self.transmogStatusToServer[slot] = itemId
+                    if itemId > 1 and self.cacheItem then
+                        self:cacheItem(itemId)
+                    end
+                end
             end
         end
     end
@@ -1558,32 +1580,37 @@ function Transmog:ChromieRefreshUiAfterSetUse(name)
     ChromieTransmogFrameNoTransmogs:Hide()
     ChromieTransmogFrameCollectedText:Hide()
 
-    local items = self.chromieSetItems and self.chromieSetItems[name]
+    local items = self.ChromieSetItemsForName and self:ChromieSetItemsForName(name)
+    if not items then
+        items = self.chromieSetItems and self.chromieSetItems[name]
+    end
     if items then
+        self.itemAnimation:Hide()
+        self.itemAnimationFrames = {}
         local slot, itemId
         for slot, itemId in pairs(items) do
-            if type(slot) == "number" and itemId then
+            slot = tonumber(slot)
+            itemId = tonumber(itemId)
+            if slot and itemId and (itemId > 1 or itemId == self.HIDDEN_ITEM_ID) then
                 local link = GetInventoryItemLink("player", slot)
                 if itemId == self.HIDDEN_ITEM_ID then
-                    self:addTransmogAnim(slot)
+                    self:addTransmogAnim(slot, nil, true)
                     if self.ChromieRememberMog then
                         self:ChromieRememberMog(link, true)
                     end
-                elseif itemId > 1 then
+                else
                     if self.cacheItem then
                         self:cacheItem(itemId)
                     end
-                    self:addTransmogAnim(slot)
+                    self:addTransmogAnim(slot, nil, true)
                     if self.ChromieRememberMog then
                         self:ChromieRememberMog(link, false)
                     end
-                elseif itemId == 0 then
-                    self:addTransmogAnim(slot, "reset")
-                    if self.ChromieForgetMog then
-                        self:ChromieForgetMog(link)
-                    end
                 end
             end
+        end
+        if self.ChromieStartItemAnim then
+            self:ChromieStartItemAnim()
         end
     end
 
@@ -1704,9 +1731,6 @@ function Transmog:ChromieHandleSetsUseGossip()
     -- Use this set does not close gossip and stays on the set view.
     -- First page is two Back... clicks away: view -> list -> main.
     if kind == "main" then
-        if self.chromieLastOptions then
-            self:ChromieIngestMainMenuStatus(self.chromieLastOptions)
-        end
         if self.chromieSetUseApplied or self.chromieSetViewPhase == "returning" then
             local cacheSetName = self.chromieSetUseApplied and name or nil
             if cacheSetName then
@@ -1714,10 +1738,10 @@ function Transmog:ChromieHandleSetsUseGossip()
             elseif self.chromieSetViewPhase == "returning" then
                 self:Chat("Set apply cancelled or failed for \"" .. tostring(name) .. "\".")
             end
-            if self.ChromieSetCacheDbg then
-                self:ChromieSetCacheDbg("set-use main name=\"" .. tostring(name) .. "\" applied="
-                    .. tostring(self.chromieSetUseApplied) .. " returning=" .. tostring(self.chromieSetViewPhase)
-                    .. " cache=" .. tostring(cacheSetName) .. " quickApply=" .. tostring(self.chromieQuickApplySetName))
+            -- Ingest first so empty gossip clears slots this set did not touch.
+            -- Then stamp known ids onto slots that are still mogged.
+            if self.chromieLastOptions then
+                self:ChromieIngestMainMenuStatus(self.chromieLastOptions)
             end
             self:ChromieApplySetItemsLocally(name)
             self:ChromieRefreshUiAfterSetUse(name)
@@ -1729,13 +1753,10 @@ function Transmog:ChromieHandleSetsUseGossip()
             self:calculateCost()
             if cacheSetName then
                 self.chromieQuickApplySetName = nil
-                self:Chat("Checking cache for set \"" .. tostring(cacheSetName) .. "\"...")
                 if self.ChromieDeferSetCacheApply then
                     self:ChromieDeferSetCacheApply(cacheSetName)
                 elseif self.ChromieScheduleCacheSetOnApply then
                     self:ChromieScheduleCacheSetOnApply(cacheSetName)
-                else
-                    self:Chat("Set cache module not loaded. /reload and try again.")
                 end
             end
             return
@@ -1932,11 +1953,17 @@ function Transmog:ChromieFinishSetSave()
     local name = self.chromieSetSaveName
     if name then
         self:ChromieAddSetName(name)
+        if self.ChromiePersistEnsureSetName then
+            self:ChromiePersistEnsureSetName(name)
+        end
         if self.ChromieHideSetCreate then
             self:ChromieHideSetCreate()
         end
         if self.ChromieRefreshManageSets then
             self:ChromieRefreshManageSets()
+        end
+        if self.ChromieCacheSetFromWorn then
+            self:ChromieCacheSetFromWorn(name)
         end
     end
     self.chromiePendingSet = nil
@@ -2239,16 +2266,6 @@ function Transmog:ChromieOnGossipShow()
             return
         end
         if justOpened and onMainMenu then
-            if self.chromieScanQueue and self.chromieScanQueue[1] then
-                if self.ChromieDeferProcessScanQueue then
-                    self:ChromieDeferProcessScanQueue()
-                elseif self.ChromieProcessScanQueue then
-                    self:ChromieProcessScanQueue()
-                end
-                return
-            end
-        end
-        if justOpened and onMainMenu then
             if self.ChromieCacheSyncMaybePrompt and self:ChromieCacheSyncMaybePrompt() then
                 return
             end
@@ -2266,6 +2283,9 @@ function Transmog:ChromieOnGossipShow()
                 if self.ChromieProcessScanQueue then
                     self:ChromieProcessScanQueue()
                 end
+                return
+            end
+            if self.ChromieTryCacheUnknownSets and self:ChromieTryCacheUnknownSets() then
                 return
             end
             if self.ChromieCacheSyncMaybePrompt and self:ChromieCacheSyncMaybePrompt() then
@@ -2469,6 +2489,9 @@ function Transmog:ChromieStartRemoveAll()
         end
     end
     if not slots[1] then
+        if self.ChromiePromptFinish then
+            self:ChromiePromptFinish()
+        end
         return
     end
     self.chromieRemoveAll = true
@@ -2490,6 +2513,9 @@ function Transmog:ChromieStartRemoveAll()
         self.chromieRemoveAll = nil
         self.chromieJob = "open"
         self:calculateCost()
+        if self.ChromiePromptFinish then
+            self:ChromiePromptFinish()
+        end
         return
     end
     self:ChromieHandleApplyGossip()
@@ -2522,8 +2548,10 @@ function Transmog:ChromieFinishRemoveAll()
     if self.PreviewCacheInit then
         self:PreviewCacheInit()
     end
-    if self.PreviewRedress then
-        self:PreviewRedress(0)
+    -- Do not SetUnit("player"): the unit appearance packet still has the old
+    -- mogs for a few frames. Rebuild from equipped (want=0) like pending undo.
+    if self.PreviewRebuild then
+        self:PreviewRebuild()
     end
     self:transmogStatus()
     if self.RefreshPendingGlows then

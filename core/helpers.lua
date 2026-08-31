@@ -40,14 +40,11 @@ function Transmog:ChromieLinkOwnedKey(link, iconPath)
     return self:ChromieOwnedKey(self:IDFromLink(link), iconPath)
 end
 
--- Visible icon for an equipped slot (mog texture, gossip icon, or hidden marker).
-function Transmog:ChromieOwnedIconForSlot(slot)
+-- Visible inventory texture only (no gossip). Use after a swap so the previous
+-- item's gossip icon cannot poison the new item's owned[] key.
+function Transmog:ChromieLiveSlotIcon(slot)
     if not slot then
         return nil
-    end
-    local gossip = self.transmogGossipIcon and self.transmogGossipIcon[slot]
-    if gossip then
-        return gossip
     end
     local vis = GetInventoryItemTexture("player", slot)
     if not vis or vis == "" then
@@ -58,6 +55,18 @@ function Transmog:ChromieOwnedIconForSlot(slot)
         return "hidden"
     end
     return vis
+end
+
+-- Visible icon for an equipped slot (mog texture, gossip icon, or hidden marker).
+function Transmog:ChromieOwnedIconForSlot(slot)
+    if not slot then
+        return nil
+    end
+    local gossip = self.transmogGossipIcon and self.transmogGossipIcon[slot]
+    if gossip then
+        return gossip
+    end
+    return self:ChromieLiveSlotIcon(slot)
 end
 
 function Transmog:ChromieOwnedKeyForSlot(slot, link)

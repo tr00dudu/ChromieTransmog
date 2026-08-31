@@ -5,6 +5,10 @@ local ChromieTransmogFrame_Find = string.find
 function Transmog:transmogStatus()
 	twfdebug("TransmogStatus")
 
+    if self.ChromieReconcileUnmoggedSlots then
+        self:ChromieReconcileUnmoggedSlots()
+    end
+
     -- add paperdoll textures
     for slotName, InventorySlotId in pairs(self.inventorySlots) do
         local frame = getglobal(slotName)
@@ -126,36 +130,82 @@ function Transmog:ChromieCostText(copper)
     return text
 end
 
+function Transmog:ChromiePromptCoverRight()
+    if self.ChromieHomeTabHide then
+        self:ChromieHomeTabHide()
+    end
+    if self.ChromieHideManageSets then
+        self:ChromieHideManageSets()
+    end
+    if self.ChromieCacheTabHide then
+        self:ChromieCacheTabHide()
+    end
+    if self.ChromieAboutTabHide then
+        self:ChromieAboutTabHide()
+    end
+    if self.hideItems then
+        self:hideItems(true)
+    end
+    if self.hidePagination then
+        self:hidePagination()
+    end
+    if ChromieTransmogFrameNoTransmogs then
+        ChromieTransmogFrameNoTransmogs:Hide()
+    end
+    if ChromieTransmogFrameCollectedText then
+        ChromieTransmogFrameCollectedText:Hide()
+    end
+    if ChromieTransmogFrameSplash then
+        ChromieTransmogFrameSplash:Hide()
+    end
+    if ChromieTransmogFrameInstructions then
+        ChromieTransmogFrameInstructions:Hide()
+    end
+end
+
+function Transmog:ChromiePromptRestoreRight()
+    if self.chromiePromptRestoring then
+        return
+    end
+    if not ChromieTransmogFrame or not ChromieTransmogFrame:IsShown() then
+        return
+    end
+    if not Transmog_switchTab then
+        return
+    end
+    local tab = self.tab
+    if not tab or tab == "" then
+        tab = "home"
+    end
+    self.chromiePromptRestoring = true
+    Transmog_switchTab(tab)
+    self.chromiePromptRestoring = nil
+end
+
 function Transmog:ChromieEnsureApplyProgressFrame()
     if self.applyProgressFrame then
         return self.applyProgressFrame
     end
-    local f = CreateFrame("Frame", "ChromieTransmogApplyProgress", UIParent)
-    f:SetWidth(340)
-    f:SetHeight(96)
-    f:SetPoint("TOP", UIParent, "TOP", 0, -120)
-    f:SetFrameStrata("DIALOG")
-    f:SetMovable(true)
-    f:EnableMouse(false)
-    f:SetBackdrop({
-        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
-        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
-        tile = true,
-        tileSize = 32,
-        edgeSize = 32,
-        insets = { left = 11, right = 12, top = 12, bottom = 11 },
-    })
+    local parent = ChromieTransmogFrame or UIParent
+    local f = CreateFrame("Frame", "ChromieTransmogApplyProgress", parent)
+    f:SetPoint("TOPLEFT", parent, "TOPLEFT", 255, -88)
+    f:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -20, 40)
+    f:SetFrameLevel((parent.GetFrameLevel and parent:GetFrameLevel() or 1) + 20)
+    f:EnableMouse(true)
+    f:Hide()
 
     local text = f:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    text:SetPoint("TOP", 0, -18)
-    text:SetWidth(300)
+    text:SetPoint("CENTER", f, "CENTER", 0, 36)
+    text:SetWidth(380)
     text:SetJustifyH("CENTER")
+    text:SetJustifyV("MIDDLE")
+    text:SetNonSpaceWrap(true)
     f.text = text
 
     local bar = CreateFrame("StatusBar", "ChromieTransmogApplyProgressBar", f)
     bar:SetWidth(268)
     bar:SetHeight(16)
-    bar:SetPoint("BOTTOM", 0, 20)
+    bar:SetPoint("CENTER", f, "CENTER", 0, -8)
     bar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
     bar:SetStatusBarColor(1, 0.82, 0.1)
     bar:SetMinMaxValues(0, 1)
@@ -168,15 +218,85 @@ function Transmog:ChromieEnsureApplyProgressFrame()
     barText:SetPoint("CENTER", 0, 0)
     f.bar = bar
     f.barText = barText
-    f:Hide()
+
+    local yes = CreateFrame("Button", "ChromieTransmogPromptYes", f, "UIPanelButtonTemplate")
+    yes:SetWidth(88)
+    yes:SetHeight(22)
+    yes:SetPoint("CENTER", f, "CENTER", -52, -48)
+    yes:SetText(YES or "Yes")
+    yes:SetScript("OnClick", function()
+        local fn = Transmog.chromiePromptOnYes
+        Transmog.chromiePromptOnYes = nil
+        if fn then
+            fn()
+        end
+    end)
+    f.yes = yes
+
+    local no = CreateFrame("Button", "ChromieTransmogPromptNo", f, "UIPanelButtonTemplate")
+    no:SetWidth(88)
+    no:SetHeight(22)
+    no:SetPoint("CENTER", f, "CENTER", 52, -48)
+    no:SetText(NO or "No")
+    no:SetScript("OnClick", function()
+        Transmog:ChromiePromptFinish()
+    end)
+    f.no = no
+
     self.applyProgressFrame = f
     return f
 end
 
-function Transmog:ChromieHideApplyProgress()
-    if self.applyProgressFrame then
-        self.applyProgressFrame:Hide()
+function Transmog:ChromiePromptSetMode(mode)
+    local f = self:ChromieEnsureApplyProgressFrame()
+    f.mode = mode
+    f.text:ClearAllPoints()
+    if mode == "confirm" then
+        f.bar:Hide()
+        f.barText:Hide()
+        f.yes:Show()
+        f.no:Show()
+        f.text:SetPoint("CENTER", f, "CENTER", 0, 36)
+    elseif mode == "progress" then
+        f.bar:Show()
+        f.barText:Show()
+        f.yes:Hide()
+        f.no:Hide()
+        f.text:SetPoint("CENTER", f, "CENTER", 0, 28)
+    else
+        f.bar:Hide()
+        f.barText:Hide()
+        f.yes:Hide()
+        f.no:Hide()
+        f.text:SetPoint("CENTER", f, "CENTER", 0, 0)
     end
+end
+
+function Transmog:ChromiePromptShow()
+    local f = self:ChromieEnsureApplyProgressFrame()
+    self:ChromiePromptCoverRight()
+    f:Show()
+    f:Raise()
+end
+
+function Transmog:ChromiePromptFinish()
+    self.chromiePromptOnYes = nil
+    if self.applyProgressHider then
+        self.applyProgressHider:Hide()
+    end
+    local f = self.applyProgressFrame
+    local wasShown = f and f:IsShown()
+    if f then
+        f:Hide()
+        f.mode = nil
+    end
+    if wasShown then
+        self:ChromiePromptRestoreRight()
+    end
+end
+
+function Transmog:ChromieHideApplyProgress()
+    self:ChromiePromptFinish()
 end
 
 function Transmog:ChromieAbortMultiApply()
@@ -195,6 +315,7 @@ function Transmog:ChromieUpdateApplyProgress(applying)
         return
     end
     local f = self:ChromieEnsureApplyProgressFrame()
+    self:ChromiePromptSetMode("progress")
     local total = self.chromieMultiTotal or 1
     local done = self.chromieMultiDone or 0
     if done > total then
@@ -206,7 +327,7 @@ function Transmog:ChromieUpdateApplyProgress(applying)
     f.barText:SetText(done .. " / " .. total)
     if remain <= 0 then
         f.text:SetText("All queued transmogs applied.")
-        f:Show()
+        self:ChromiePromptShow()
         return
     end
     if applying then
@@ -218,7 +339,25 @@ function Transmog:ChromieUpdateApplyProgress(applying)
         end
         f.text:SetText("Right-click Warpweaver to continue.\n" .. remain .. " more " .. clicks .. " needed.")
     end
-    f:Show()
+    self:ChromiePromptShow()
+end
+
+function Transmog:ChromieShowApplyConfirm(msg)
+    local f = self:ChromieEnsureApplyProgressFrame()
+    self:ChromiePromptSetMode("confirm")
+    f.text:SetText(msg or "")
+    self.chromiePromptOnYes = function()
+        if Transmog.ChromieIsFullRemovePending and Transmog:ChromieIsFullRemovePending() then
+            local wait = Transmog:ChromieEnsureApplyProgressFrame()
+            Transmog:ChromiePromptSetMode("message")
+            wait.text:SetText("Removing all transmogrifications...")
+            Transmog:ChromiePromptShow()
+            Transmog:ChromieStartRemoveAll()
+        else
+            Transmog:ChromieBeginQueuedApply()
+        end
+    end
+    self:ChromiePromptShow()
 end
 
 function Transmog:ChromieBeginQueuedApply()
@@ -238,23 +377,6 @@ function Transmog:ChromieBeginQueuedApply()
     self.pendingApplyCount = 1
     self:ChromieStartApply(slot, item)
 end
-
-StaticPopupDialogs["CHROMIE_TRANSMOG_APPLY_CONFIRM"] = {
-    text = "%s",
-    button1 = TEXT(YES),
-    button2 = TEXT(NO),
-    OnAccept = function()
-        if Transmog.ChromieIsFullRemovePending and Transmog:ChromieIsFullRemovePending() then
-            Transmog:ChromieStartRemoveAll()
-        else
-            Transmog:ChromieBeginQueuedApply()
-        end
-    end,
-    timeout = 0,
-    whileDead = 1,
-    hideOnEscape = 1,
-    showAlert = 1,
-}
 
 StaticPopupDialogs["CHROMIE_TRANSMOG_VENDOR_MODE"] = {
     text = "Warpweaver is using the vendor item list (.t i on). ChromieTransmog needs the gossip list (.t i off).\n\nSwitch it off now? Then talk to Warpweaver again.",
@@ -289,16 +411,16 @@ function Apply_OnClick()
     if pending <= 0 then
         return
     end
-    if Transmog.ChromieIsFullRemovePending and Transmog:ChromieIsFullRemovePending() then
-        local msg = pending .. " transmogs queued. Remove all transmogrifications in one step?"
-        StaticPopup_Show("CHROMIE_TRANSMOG_APPLY_CONFIRM", msg)
-        return
-    end
     if pending == 1 then
         Transmog:ChromieBeginQueuedApply()
         return
     end
+    if Transmog.ChromieIsFullRemovePending and Transmog:ChromieIsFullRemovePending() then
+        local msg = pending .. " transmogs queued. Remove all transmogrifications in one step?"
+        Transmog:ChromieShowApplyConfirm(msg)
+        return
+    end
     local costText = Transmog:ChromieCostText(copper)
     local msg = pending .. " transmogs queued. Estimated cost: " .. costText .. ".\nWarpweaver applies one slot per click. Continue?"
-    StaticPopup_Show("CHROMIE_TRANSMOG_APPLY_CONFIRM", msg)
+    Transmog:ChromieShowApplyConfirm(msg)
 end

@@ -51,6 +51,7 @@ function Transmog:ChromiePersistChar()
                 items = {},
                 unknown = {},
                 inferred = {},
+                lastUsed = {},
             },
         }
     end
@@ -73,7 +74,7 @@ function Transmog:ChromiePersistChar()
         char.version = self.CACHE_SCHEMA_VERSION
     end
     if not char.sets then
-        char.sets = { names = {}, items = {}, unknown = {}, inferred = {} }
+        char.sets = { names = {}, items = {}, unknown = {}, inferred = {}, lastUsed = {} }
     end
     if not char.sets.names then
         char.sets.names = {}
@@ -87,6 +88,9 @@ function Transmog:ChromiePersistChar()
     if not char.sets.inferred then
         char.sets.inferred = {}
     end
+    if not char.sets.lastUsed then
+        char.sets.lastUsed = {}
+    end
     return char
 end
 
@@ -98,19 +102,23 @@ function Transmog:ChromieWeaponTypeKey(link)
     if not link then
         return nil
     end
-    local _, _, _, _, _, _, _, _, invType, _, subclass = GetItemInfo(link)
-    if not invType then
+    -- 3.3.5 GetItemInfo: 6 type, 7 subtype, 9 equipLoc. Do not use select(11)
+    -- (sellPrice) — that split every item into its own cache key.
+    local _, _, _, _, _, itemType, itemSubType, _, invType = GetItemInfo(link)
+    if not itemType or not itemSubType then
         local itemId = self:IDFromLink(link)
         if itemId and self.cacheItem then
             self:cacheItem(itemId)
-            _, _, _, _, _, _, _, _, invType, _, subclass = GetItemInfo(itemId)
+            _, _, _, _, _, itemType, itemSubType, _, invType = GetItemInfo(itemId)
         end
     end
-    if not invType then
-        return nil
+    if itemType and itemSubType then
+        return "w:" .. tostring(itemType) .. ":" .. tostring(itemSubType)
     end
-    subclass = subclass or "Unknown"
-    return "w:" .. invType .. ":" .. subclass
+    if invType then
+        return "w:" .. tostring(invType)
+    end
+    return nil
 end
 
 function Transmog:ChromieItemClassNum(slot, link)
@@ -324,6 +332,99 @@ function Transmog:ChromiePersistGetApplied(slot)
     return self:ChromiePersistGetOwnedMog(link, self:ChromieOwnedIconForSlot(slot))
 end
 
+function Transmog:ChromieSetItemsForName(name)
+    if not name then
+        return nil
+    end
+    local src
+    local char = self.ChromiePersistChar and self:ChromiePersistChar()
+    if char and char.sets and char.sets.inferred and char.sets.inferred[name]
+        and char.sets.items then
+        src = char.sets.items[name]
+    end
+    if not src then
+        src = self.chromieSetItems and self.chromieSetItems[name]
+    end
+    if not src then
+        return nil
+    end
+    local items = {}
+    local k, v
+    for k, v in pairs(src) do
+        local slot = tonumber(k)
+        local id = tonumber(v)
+        if slot then
+            items[slot] = id or 0
+        end
+    end
+    return items
+end
+
+function Transmog:ChromiePersistDropOwnedForItem(itemId)
+    itemId = itemId and tonumber(itemId)
+    local char = self:ChromiePersistChar()
+    if not itemId or itemId < 1 or not char or not char.owned then
+        return
+    end
+    local prefix = "o:" .. tostring(itemId) .. ":"
+    local drop = {}
+    local key
+    for key in pairs(char.owned) do
+        if string.sub(key, 1, string.len(prefix)) == prefix then
+            table.insert(drop, key)
+        end
+    end
+    local i = 1
+    while drop[i] do
+        char.owned[drop[i]] = nil
+        i = i + 1
+    end
+end
+
+-- After Use this set: drop stale owned keys for those set slots only, then
+-- write the new item+icon from the set cache. Other equipped slots are untouched.
+function Transmog:ChromieAppliedCopyFromSet(name)
+    local items = self:ChromieSetItemsForName(name)
+    if not items then
+        return
+    end
+    if not self.applied then
+        self.applied = {}
+    end
+    local slot, id
+    for slot, id in pairs(items) do
+        slot = tonumber(slot)
+        id = tonumber(id)
+        if slot and self:ChromieSlotSupportsTransmog(slot) and id
+            and (id > 1 or id == self.HIDDEN_ITEM_ID) then
+            local have = self.transmogStatusFromServer and self.transmogStatusFromServer[slot]
+            if have and have ~= 0 then
+                local link = GetInventoryItemLink("player", slot)
+                if link then
+                    self:ChromiePersistDropOwnedForItem(self:IDFromLink(link))
+                    if id == self.HIDDEN_ITEM_ID then
+                        self:ChromiePersistSetOwnedMog(link, id, "hidden")
+                        self.applied[slot] = id
+                    else
+                        if self.cacheItem then
+                            self:cacheItem(id)
+                        end
+                        local icon
+                        if GetItemIcon then
+                            icon = GetItemIcon(id)
+                        end
+                        if not icon then
+                            icon = select(10, GetItemInfo(id))
+                        end
+                        self:ChromiePersistSetOwnedMog(link, id, icon)
+                        self.applied[slot] = id
+                    end
+                end
+            end
+        end
+    end
+end
+
 function Transmog:ChromiePersistSetApplied(slot, mogId)
     if not slot then
         return
@@ -361,6 +462,19 @@ end
 -- After gear swap: rebuild slot mirror from owned[] for the newly equipped pieces.
 function Transmog:ChromieOwnedOnGearChanged()
     local changedSlots = self.ChromieGetEquipSlotsChanged and self:ChromieGetEquipSlotsChanged()
+    local changed = {}
+    local i = 1
+    while changedSlots and changedSlots[i] do
+        changed[changedSlots[i]] = true
+        i = i + 1
+    end
+    -- Gossip icons belong to the previous item; they must not key the new one.
+    if self.transmogGossipIcon then
+        local slot
+        for slot in pairs(changed) do
+            self.transmogGossipIcon[slot] = nil
+        end
+    end
     self:ChromieHydrateAppliedFromPersist()
     if not self.transmogStatusFromServer then
         self.transmogStatusFromServer = {}
@@ -372,7 +486,31 @@ function Transmog:ChromieOwnedOnGearChanged()
     local _, slot
     for _, slot in pairs(self.inventorySlots or {}) do
         local link = GetInventoryItemLink("player", slot)
-        local mog = link and self:ChromiePersistGetOwnedMog(link, self:ChromieOwnedIconForSlot(slot))
+        local icon
+        if changed[slot] then
+            icon = self:ChromieLiveSlotIcon(slot)
+        else
+            icon = self:ChromieOwnedIconForSlot(slot)
+        end
+        local mog = link and self:ChromiePersistGetOwnedMog(link, icon)
+        if (not mog or mog == 0) and changed[slot] and link then
+            local fromIcon = self.ChromieMogIdFromVisibleIcon and self:ChromieMogIdFromVisibleIcon(slot)
+            if fromIcon == 0 then
+                mog = 0
+            elseif fromIcon and fromIcon > 1 then
+                mog = fromIcon
+                self:ChromiePersistSetOwnedMog(link, mog, icon)
+            elseif fromIcon == self.HIDDEN_ITEM_ID then
+                mog = self.HIDDEN_ITEM_ID
+                self:ChromiePersistSetOwnedMog(link, mog, "hidden")
+            else
+                local unique = self.ChromiePersistFindOwnedMogForItem
+                    and self:ChromiePersistFindOwnedMogForItem(self:IDFromLink(link))
+                if unique and unique ~= 0 then
+                    mog = unique
+                end
+            end
+        end
         if not mog then
             mog = 0
         end
@@ -381,11 +519,12 @@ function Transmog:ChromieOwnedOnGearChanged()
         local want = self.transmogStatusToServer[slot]
         local userPending = overlayOpen and want ~= nil and have ~= nil and want ~= have
         if not userPending then
-            self.transmogStatusFromServer[slot] = mog
-            self.transmogStatusToServer[slot] = mog
-        end
-        if mog == 0 and self.transmogGossipIcon then
-            self.transmogGossipIcon[slot] = nil
+            -- Owned lookup misses after set apply (new mog icon). Do not unmark
+            -- overlay slots unless this equipped item actually changed.
+            if mog ~= 0 or changed[slot] or not overlayOpen then
+                self.transmogStatusFromServer[slot] = mog
+                self.transmogStatusToServer[slot] = mog
+            end
         end
     end
     if self.mogByUniqueId then
@@ -393,6 +532,9 @@ function Transmog:ChromieOwnedOnGearChanged()
     end
     if overlayOpen and self.transmogStatus then
         self:transmogStatus()
+    end
+    if overlayOpen and self.PreviewApplyChangedSlots then
+        self:PreviewApplyChangedSlots(changed)
     end
     if self.ChromieCacheTabRefresh then
         self:ChromieCacheTabRefresh()
@@ -439,11 +581,15 @@ function Transmog:ChromiePersistDropSet(name)
     if self.chromieSetItems then
         self.chromieSetItems[name] = nil
     end
+    self:ChromieLastUsedPrune(name)
+    if self.ChromieHomeTabInvalidate then
+        self:ChromieHomeTabInvalidate(name)
+    end
 end
 
 function Transmog:ChromiePersistPruneStaleSets(liveNames)
     local char = self:ChromiePersistChar()
-    if not char or not char.sets or not char.sets.items then
+    if not char or not char.sets then
         return
     end
     local live = {}
@@ -453,11 +599,25 @@ function Transmog:ChromiePersistPruneStaleSets(liveNames)
         i = i + 1
     end
     local dropped = {}
-    for name in pairs(char.sets.items) do
-        if not live[name] then
-            table.insert(dropped, name)
-            self:ChromiePersistDropSet(name)
+    if char.sets.items then
+        for name in pairs(char.sets.items) do
+            if not live[name] then
+                table.insert(dropped, name)
+                self:ChromiePersistDropSet(name)
+            end
         end
+    end
+    if char.sets.lastUsed then
+        local next = {}
+        i = 1
+        while char.sets.lastUsed[i] do
+            local name = char.sets.lastUsed[i]
+            if live[name] then
+                table.insert(next, name)
+            end
+            i = i + 1
+        end
+        char.sets.lastUsed = next
     end
     if dropped[1] and self.Chat then
         self:Chat("Removed stale cached set(s): " .. table.concat(dropped, ", "))
@@ -467,6 +627,10 @@ end
 function Transmog:ChromiePersistSetNames(names)
     local char = self:ChromiePersistChar()
     if not char or not names then
+        return
+    end
+    -- First gossip packet can be empty (Back only). Do not wipe persist names.
+    if not names[1] then
         return
     end
     char.sets.names = names
@@ -515,6 +679,9 @@ function Transmog:ChromiePersistSetItems(name, items)
         self.chromieSetItems = {}
     end
     self.chromieSetItems[name] = items
+    if self.ChromieHomeTabInvalidate then
+        self:ChromieHomeTabInvalidate(name)
+    end
 end
 
 function Transmog:ChromiePersistLoadSets()
@@ -522,8 +689,100 @@ function Transmog:ChromiePersistLoadSets()
     if not char then
         return
     end
-    self.chromieSets = char.sets.names or {}
-    self.chromieSetItems = char.sets.items or {}
+    if not (self.chromieSets and self.chromieSets[1]) then
+        self.chromieSets = char.sets.names or {}
+    end
+    self.chromieSetItems = char.sets.items or self.chromieSetItems or {}
+end
+
+function Transmog:ChromieRestorePersistSession()
+    if self.ChromiePersistLoadSets then
+        self:ChromiePersistLoadSets()
+    end
+    if self.ChromieHydrateAppliedFromPersist then
+        self:ChromieHydrateAppliedFromPersist()
+    end
+end
+
+Transmog.CHROMIE_LAST_USED_MAX = 4
+
+function Transmog:ChromieLastUsedRecord(name)
+    if not name or name == "" then
+        return
+    end
+    local char = self:ChromiePersistChar()
+    if not char then
+        return
+    end
+    if not char.sets.lastUsed then
+        char.sets.lastUsed = {}
+    end
+    local list = char.sets.lastUsed
+    local i = 1
+    while list[i] do
+        if list[i] == name then
+            table.remove(list, i)
+            break
+        end
+        i = i + 1
+    end
+    table.insert(list, 1, name)
+    local max = self.CHROMIE_LAST_USED_MAX or 4
+    while list[max + 1] do
+        table.remove(list)
+    end
+end
+
+function Transmog:ChromieLastUsedPrune(name)
+    if not name then
+        return
+    end
+    local char = self:ChromiePersistChar()
+    if not char or not char.sets or not char.sets.lastUsed then
+        return
+    end
+    local list = char.sets.lastUsed
+    local i = 1
+    while list[i] do
+        if list[i] == name then
+            table.remove(list, i)
+        else
+            i = i + 1
+        end
+    end
+end
+
+function Transmog:ChromieLastUsedList()
+    local out = {}
+    local seen = {}
+    local n = 0
+    local max = self.CHROMIE_LAST_USED_MAX or 4
+    local char = self:ChromiePersistChar()
+    local last = char and char.sets and char.sets.lastUsed
+    local i = 1
+    while last and last[i] and n < max do
+        local name = last[i]
+        if name and not seen[name] then
+            -- Keep last-used even when set names were dropped (cache drop /
+            -- before Warpweaver scrape). Live scrape prunes deleted names.
+            n = n + 1
+            out[n] = name
+            seen[name] = true
+        end
+        i = i + 1
+    end
+    local names = self.chromieSets or {}
+    i = 1
+    while names[i] and n < max do
+        local name = names[i]
+        if name and not seen[name] then
+            n = n + 1
+            out[n] = name
+            seen[name] = true
+        end
+        i = i + 1
+    end
+    return out
 end
 
 function Transmog:ChromiePersistDropUnlocks()
@@ -545,10 +804,56 @@ function Transmog:ChromiePersistDropAll()
     end
     char.unlocks = {}
     char.owned = {}
-    char.sets = { names = {}, items = {}, unknown = {}, inferred = {} }
+    if not char.sets then
+        char.sets = { names = {}, items = {}, unknown = {}, inferred = {}, lastUsed = {} }
+    else
+        -- Drop names and piece cache. Keep last-used so Home still has cards
+        -- until Warpweaver scrape fills the live list.
+        char.sets.names = {}
+        char.sets.items = {}
+        char.sets.inferred = {}
+        char.sets.unknown = {}
+    end
     self.applied = {}
-    self.chromieSets = {}
+    self.appliedIcon = {}
+    self.previewShown = {}
+    self.previewBaseline = {}
+    -- Session still held inferred mog ids after unlocks were wiped. The next
+    -- mogged scan merged that id back into an empty cache (40 live + 1 stale
+    -- = 41) and "inferred" it immediately.
+    if self.transmogStatusFromServer and self.inventorySlots then
+        local _, slot
+        for _, slot in pairs(self.inventorySlots) do
+            local have = self.transmogStatusFromServer[slot]
+            if have and have > 1 then
+                self.transmogStatusFromServer[slot] = self.UNKNOWN_MOG_ID
+            end
+            if self.transmogStatusToServer then
+                local want = self.transmogStatusToServer[slot]
+                if want and want > 1 then
+                    self.transmogStatusToServer[slot] = self.UNKNOWN_MOG_ID
+                end
+            end
+        end
+    end
     self.chromieSetItems = {}
+    self.chromieSets = {}
+    self.lastAppliedSetName = nil
+    self.chromieCache = {}
+    self.chromieCacheIcon = {}
+    self.chromieSessionScanned = {}
+    self.chromieScanQueue = nil
+    if self.mogByUniqueId then
+        self.mogByUniqueId = {}
+    end
+    if self.ChromieSetCacheAbort then
+        self:ChromieSetCacheAbort()
+    else
+        self.setCacheJob = nil
+    end
+    if self.ChromieHomeTabInvalidate then
+        self:ChromieHomeTabInvalidate()
+    end
 end
 
 function Transmog:ChromieSlotLabel(slot)
@@ -576,10 +881,10 @@ end
 
 function Transmog:ChromieUnlockStatusReason(status)
     if status == "needs_scan" or status == "missing_mog" or status == "stale" then
-        return "open slot in Items tab"
+        return "click a dress-up slot"
     end
     if status == "empty" then
-        return "open slot in Items tab"
+        return "click a dress-up slot"
     end
     return nil
 end

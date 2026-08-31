@@ -110,6 +110,19 @@
             </DressUpModel>
         </Frames>
     </Frame>
+    <!-- Nested DressUpModel like LookTemplate; CreateFrame("DressUpModel") shares one renderer. -->
+    <Frame name="ChromieTransmogHomeCardTemplate" virtual="true">
+        <Size>
+            <AbsDimension x="108" y="221"/>
+        </Size>
+        <Frames>
+            <DressUpModel name="$parentItemModel" scale="2.0">
+                <Size>
+                    <AbsDimension x="80" y="161"/>
+                </Size>
+            </DressUpModel>
+        </Frames>
+    </Frame>
     <StatusBar name="TransmogCollectedStatusBarTemplate" virtual="true" drawLayer="BACKGROUND" minValue="0" maxValue="1"
                defaultValue="0">
         <Size>
@@ -620,7 +633,7 @@
                     </OnClick>
                 </Scripts>
             </Button>
-            <Button name="$parentItemsButton" inherits="UIPanelButtonTemplate" text="Items">
+            <Button name="$parentItemsButton" inherits="UIPanelButtonTemplate" text="Home">
                 <NormalTexture name="$parentNormalTexture" file="Interface\AddOns\ChromieTransmog\assets\tab_active">
                     <Size>
                         <AbsDimension x="128" y="32"/>
@@ -657,7 +670,7 @@
                 </Anchors>
                 <Scripts>
                     <OnClick>
-                        Transmog_switchTab('items')
+                        Transmog_switchTab('home')
                     </OnClick>
                 </Scripts>
             </Button>
@@ -740,6 +753,47 @@
                 <Scripts>
                     <OnClick>
                         Transmog_switchTab('cache')
+                    </OnClick>
+                </Scripts>
+            </Button>
+            <Button name="$parentAboutButton" inherits="UIPanelButtonTemplate" text="About">
+                <NormalTexture name="$parentNormalTexture" file="Interface\AddOns\ChromieTransmog\assets\tab_active">
+                    <Size>
+                        <AbsDimension x="128" y="32"/>
+                    </Size>
+                    <Anchors>
+                        <Anchor point="TOPLEFT">
+                            <Offset>
+                                <AbsDimension x="0" y="0"/>
+                            </Offset>
+                        </Anchor>
+                    </Anchors>
+                </NormalTexture>
+                <PushedTexture name="$parentPushedTexture" file="Interface\AddOns\ChromieTransmog\assets\tab_active">
+                    <Size>
+                        <AbsDimension x="128" y="32"/>
+                    </Size>
+                    <Anchors>
+                        <Anchor point="TOPLEFT">
+                            <Offset>
+                                <AbsDimension x="0" y="0"/>
+                            </Offset>
+                        </Anchor>
+                    </Anchors>
+                </PushedTexture>
+                <Size>
+                    <AbsDimension x="76" y="32"/>
+                </Size>
+                <Anchors>
+                    <Anchor point="LEFT" relativeTo="$parentCacheButton" relativePoint="RIGHT">
+                        <Offset>
+                            <AbsDimension x="10" y="0"/>
+                        </Offset>
+                    </Anchor>
+                </Anchors>
+                <Scripts>
+                    <OnClick>
+                        Transmog_switchTab('about')
                     </OnClick>
                 </Scripts>
             </Button>

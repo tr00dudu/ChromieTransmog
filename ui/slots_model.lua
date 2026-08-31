@@ -77,7 +77,7 @@ end
 --   pending hide -> Undress + TryOn cache (UndressSlot is a no-op on Chromie)
 -- Grid thumbnails (TransmogLookN) stay a separate widget.
 
-function Transmog:PreviewTryOn(itemId, slot)
+function Transmog:PreviewTryOn(itemId, slot, model)
     if self.ChromieDbg then
         local why
         if itemId == nil then
@@ -111,13 +111,18 @@ function Transmog:PreviewTryOn(itemId, slot)
     if slot == 15 and not self:PreviewShowsCloak() then
         return
     end
-    local model = ChromieTransmogFramePlayerModel
+    model = model or ChromieTransmogFramePlayerModel
     if not model then
         return
     end
     if not pcall(function()
         model:TryOn(itemId)
     end) then
+        pcall(function()
+            model:TryOn("item:" .. itemId)
+        end)
+    elseif model ~= ChromieTransmogFramePlayerModel then
+        -- Lua/home DressUpModels often no-op numeric TryOn without error.
         pcall(function()
             model:TryOn("item:" .. itemId)
         end)
@@ -337,39 +342,54 @@ function Transmog:PreviewWeaponDressId(slot)
 end
 
 -- Weapons after Undress: offhand TryOn can drop main hand on Chromie DressUpModel.
-function Transmog:PreviewTryOnWeapons()
-    local mh = self:PreviewWeaponDressId(16)
-    local oh = self:PreviewWeaponDressId(17)
+function Transmog:PreviewTryOnWeapons(model, dressIdFn)
+    local mh, oh, rg
+    if dressIdFn then
+        mh = dressIdFn(16)
+        oh = dressIdFn(17)
+        rg = dressIdFn(18)
+    else
+        mh = self:PreviewWeaponDressId(16)
+        oh = self:PreviewWeaponDressId(17)
+        rg = self:PreviewWeaponDressId(18)
+    end
     if mh and mh > 1 then
-        self:PreviewTryOn(mh, 16)
+        self:PreviewTryOn(mh, 16, model)
     end
     if oh and oh > 1 then
-        self:PreviewTryOn(oh, 17)
+        self:PreviewTryOn(oh, 17, model)
     end
     if mh and mh > 1 then
-        self:PreviewTryOn(mh, 16)
+        self:PreviewTryOn(mh, 16, model)
     end
-    if self:PreviewShouldDressRanged() then
-        local rg = self:PreviewWeaponDressId(18)
-        if rg and rg > 1 then
-            self:PreviewTryOn(rg, 18)
-        end
+    local dressRanged
+    if dressIdFn then
+        dressRanged = rg and rg > 1
+    else
+        dressRanged = self:PreviewShouldDressRanged()
+    end
+    if dressRanged and rg and rg > 1 then
+        self:PreviewTryOn(rg, 18, model)
     end
 end
 
 -- Full undress + cache TryOn. Only for hide (or restack when a slot is hidden).
-function Transmog:PreviewRebuild()
-    local model = ChromieTransmogFramePlayerModel
+-- Optional model/dressIdFn dress a different DressUpModel from an id callback
+-- without mutating the left dummy's previewShown cache.
+function Transmog:PreviewRebuild(model, dressIdFn)
+    model = model or ChromieTransmogFramePlayerModel
     if not model then
         return
     end
-    if not self.previewShown then
-        self:PreviewCacheInit()
-    else
-        self:PreviewFillShownFromApplied()
-    end
-    if self.previewRedressFrame then
-        self.previewRedressFrame:Hide()
+    if not dressIdFn then
+        if not self.previewShown then
+            self:PreviewCacheInit()
+        else
+            self:PreviewFillShownFromApplied()
+        end
+        if self.previewRedressFrame then
+            self.previewRedressFrame:Hide()
+        end
     end
     model:Undress()
     local extra = { 4, 19 }
@@ -378,16 +398,22 @@ function Transmog:PreviewRebuild()
         local link = GetInventoryItemLink("player", extra[i])
         local id = link and self:IDFromLink(link)
         if id then
-            self:PreviewTryOn(id, extra[i])
+            self:PreviewTryOn(id, extra[i], model)
         end
     end
     local order = self.previewArmorOrder or { 1, 3, 5, 6, 7, 8, 9, 10, 15 }
     i = 1
     while order[i] do
-        self:PreviewTryOn(self:PreviewDressId(order[i]), order[i])
+        local id
+        if dressIdFn then
+            id = dressIdFn(order[i])
+        else
+            id = self:PreviewDressId(order[i])
+        end
+        self:PreviewTryOn(id, order[i], model)
         i = i + 1
     end
-    self:PreviewTryOnWeapons()
+    self:PreviewTryOnWeapons(model, dressIdFn)
 end
 
 function Transmog:PreviewRebuildFromCache()
@@ -416,6 +442,71 @@ function Transmog:PreviewRestack()
         i = i + 1
     end
     self:PreviewTryOnWeapons()
+end
+
+function Transmog:PreviewApplyResolvedMog(slot, mogId)
+    if not slot or not mogId then
+        return
+    end
+    if not ChromieTransmogFrame or not ChromieTransmogFrame:IsShown() then
+        return
+    end
+    if mogId == self.HIDDEN_ITEM_ID then
+        if not self.previewShown then
+            self:PreviewCacheInit()
+        end
+        self.previewShown[slot] = mogId
+        self:PreviewRebuild()
+        return
+    end
+    if mogId <= 1 then
+        return
+    end
+    if not self.previewShown then
+        self:PreviewCacheInit()
+    end
+    self.previewShown[slot] = mogId
+    if self.previewBaseline then
+        self.previewBaseline[slot] = mogId
+    end
+    self:PreviewApplySlot(slot)
+end
+
+-- Redress only the slots that just changed. A full Rebuild would TryOn
+-- equipped base items for incomplete (unknown) slots and unmog the dummy.
+function Transmog:PreviewApplyChangedSlots(changed)
+    if not changed or not ChromieTransmogFrame or not ChromieTransmogFrame:IsShown() then
+        return
+    end
+    if not self.previewShown then
+        self:PreviewCacheInit()
+    end
+    local hidden = false
+    local weapons = false
+    local slot
+    for slot in pairs(changed) do
+        local id = self:PreviewCacheIdFromWant(slot)
+        self.previewShown[slot] = id
+        if self.previewBaseline then
+            self.previewBaseline[slot] = id
+        end
+        if id == self.HIDDEN_ITEM_ID then
+            hidden = true
+        elseif id == self.UNKNOWN_MOG_ID or not id then
+            -- Incomplete slot: do not SetUnit/Rebuild the whole dummy.
+        elseif slot == 16 or slot == 17 or slot == 18 then
+            weapons = true
+        else
+            self:PreviewApplySlot(slot)
+        end
+    end
+    if hidden then
+        self:PreviewRebuild()
+        return
+    end
+    if weapons then
+        self:PreviewTryOnWeapons()
+    end
 end
 
 function Transmog:PreviewApplySlot(slot)
@@ -629,20 +720,39 @@ function selectTransmogSlot(InventorySlotId, slotName)
         return
     end
 
-    -- Leaving Cache tab via dress-up slot click closes the cache report.
-    if Transmog.tab == "cache" and InventorySlotId ~= -1 then
+    local overlay = Transmog.applyProgressFrame
+    if overlay and overlay:IsShown() then
+        if Transmog.chromieMultiActive then
+            return
+        end
+        Transmog.chromiePromptOnYes = nil
+        overlay:Hide()
+        overlay.mode = nil
+    end
+
+    -- Slot click opens the appearance grid; no Items tab to highlight.
+    if InventorySlotId ~= -1 and Transmog.tab ~= "items" then
         Transmog.tab = "items"
+        if Transmog.ChromieHomeTabHide then
+            Transmog:ChromieHomeTabHide()
+        end
         if Transmog.ChromieCacheTabHide then
             Transmog:ChromieCacheTabHide()
         end
         if ChromieTransmogFrameItemsButton then
-            ChromieTransmogFrameItemsButtonText:SetText(HIGHLIGHT_FONT_COLOR_CODE .. "Items")
+            ChromieTransmogFrameItemsButtonText:SetText(FONT_COLOR_CODE_CLOSE .. "Home")
         end
         if ChromieTransmogFrameSetsButton then
             ChromieTransmogFrameSetsButtonText:SetText(FONT_COLOR_CODE_CLOSE .. "Sets")
         end
         if ChromieTransmogFrameCacheButton then
             ChromieTransmogFrameCacheButtonText:SetText(FONT_COLOR_CODE_CLOSE .. "Cache")
+        end
+        if ChromieTransmogFrameAboutButton then
+            ChromieTransmogFrameAboutButtonText:SetText(FONT_COLOR_CODE_CLOSE .. "About")
+        end
+        if Transmog.ChromieAboutTabHide then
+            Transmog:ChromieAboutTabHide()
         end
     end
 
@@ -765,15 +875,23 @@ function Transmog_resetAllSlots()
     Transmog_revert()
 end
 
--- Switches between Items, Sets, and Cache tabs.
+-- Switches between Home, Sets, Cache, About, and slot-browse (internal "items").
 function Transmog_switchTab(to)
 
 	twfdebug("Transmog_switchTab " .. to)
 
+    local overlay = Transmog.applyProgressFrame
+    local keepPrompt = Transmog.chromieMultiActive and overlay and overlay:IsShown() and overlay.mode == "progress"
+    if overlay and overlay:IsShown() and not keepPrompt and not Transmog.chromiePromptRestoring then
+        Transmog.chromiePromptOnYes = nil
+        overlay:Hide()
+        overlay.mode = nil
+    end
+
     Transmog.tab = to
 
     if ChromieTransmogFrameItemsButton then
-        ChromieTransmogFrameItemsButtonText:SetText(FONT_COLOR_CODE_CLOSE .. 'Items')
+        ChromieTransmogFrameItemsButtonText:SetText(FONT_COLOR_CODE_CLOSE .. 'Home')
     end
     if ChromieTransmogFrameSetsButton then
         ChromieTransmogFrameSetsButtonText:SetText(FONT_COLOR_CODE_CLOSE .. 'Sets')
@@ -781,22 +899,35 @@ function Transmog_switchTab(to)
     if ChromieTransmogFrameCacheButton then
         ChromieTransmogFrameCacheButtonText:SetText(FONT_COLOR_CODE_CLOSE .. 'Cache')
     end
+    if ChromieTransmogFrameAboutButton then
+        ChromieTransmogFrameAboutButtonText:SetText(FONT_COLOR_CODE_CLOSE .. 'About')
+    end
 
+    if Transmog.ChromieHomeTabHide then
+        Transmog:ChromieHomeTabHide()
+    end
     if Transmog.ChromieHideManageSets then
         Transmog:ChromieHideManageSets()
     end
     if Transmog.ChromieCacheTabHide then
         Transmog:ChromieCacheTabHide()
     end
+    if Transmog.ChromieAboutTabHide then
+        Transmog:ChromieAboutTabHide()
+    end
     Transmog:hideItems(true)
     Transmog:hidePagination()
     ChromieTransmogFrameNoTransmogs:Hide()
     ChromieTransmogFrameCollectedText:Hide()
 
-    if to == 'items' then
+    if to == 'home' then
         if ChromieTransmogFrameItemsButton then
-            ChromieTransmogFrameItemsButtonText:SetText(HIGHLIGHT_FONT_COLOR_CODE .. 'Items')
+            ChromieTransmogFrameItemsButtonText:SetText(HIGHLIGHT_FONT_COLOR_CODE .. 'Home')
         end
+        if Transmog.ChromieHomeTabShow then
+            Transmog:ChromieHomeTabShow()
+        end
+    elseif to == 'items' then
         Transmog:hideItems(false)
         if Transmog.currentTransmogSlot ~= nil then
             selectTransmogSlot(Transmog.currentTransmogSlot, Transmog.currentTransmogSlotName)
@@ -817,5 +948,18 @@ function Transmog_switchTab(to)
         if Transmog.ChromieCacheTabShow then
             Transmog:ChromieCacheTabShow()
         end
+    elseif to == 'about' then
+        if ChromieTransmogFrameAboutButton then
+            ChromieTransmogFrameAboutButtonText:SetText(HIGHLIGHT_FONT_COLOR_CODE .. 'About')
+        end
+        if Transmog.ChromieAboutTabShow then
+            Transmog:ChromieAboutTabShow()
+        end
+    end
+
+    if keepPrompt and Transmog.ChromiePromptCoverRight then
+        Transmog:ChromiePromptCoverRight()
+        overlay:Show()
+        overlay:Raise()
     end
 end

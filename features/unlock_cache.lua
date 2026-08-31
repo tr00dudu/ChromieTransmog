@@ -1,5 +1,76 @@
 local Transmog = _G.ChromieTransmog
 
+function Transmog:ChromieSlotTextureIsHidden(slot)
+    if not slot then
+        return false
+    end
+    local vis = GetInventoryItemTexture("player", slot)
+    if not vis or vis == "" then
+        return true
+    end
+    local n = string.lower(tostring(vis))
+    if string.find(n, "paperdoll", 1, true) or string.find(n, "wowunknownitem", 1, true) then
+        return true
+    end
+    return false
+end
+
+function Transmog:ChromieSlotTextureIsMogged(slot)
+    if not slot then
+        return false
+    end
+    local link = GetInventoryItemLink("player", slot)
+    if not link then
+        return false
+    end
+    local visTex = GetInventoryItemTexture("player", slot)
+    local visKey = self:ChromieNormIcon(visTex)
+    if not visKey or string.find(visKey, "paperdoll", 1, true) or string.find(visKey, "wowunknownitem", 1, true) then
+        return false
+    end
+    local origTex = select(10, GetItemInfo(link))
+    local origKey = self:ChromieNormIcon(origTex)
+    return visKey and origKey and visKey ~= origKey and true or false
+end
+
+-- Drop overlay mog flags when the live item is unmogged. Session fromServer
+-- survives window close and set-apply, which paints gold borders on slots the
+-- set did not touch.
+function Transmog:ChromieReconcileUnmoggedSlots()
+    if not self.transmogStatusFromServer then
+        return
+    end
+    local overlayOpen = ChromieTransmogFrame and ChromieTransmogFrame:IsShown()
+    local _, slot
+    for _, slot in pairs(self.inventorySlots or {}) do
+        local have = self.transmogStatusFromServer[slot]
+        local want = self.transmogStatusToServer and self.transmogStatusToServer[slot]
+        local pending = overlayOpen and have and want ~= nil and want ~= have
+        if pending then
+            -- keep overlay flags while a change is queued
+        else
+            local applied = self.ChromiePersistGetApplied and self:ChromiePersistGetApplied(slot)
+            local persistMog = applied and (applied > 1 or applied == self.HIDDEN_ITEM_ID)
+            local liveMog = self:ChromieSlotTextureIsMogged(slot)
+            local liveHidden = self:ChromieSlotTextureIsHidden(slot)
+            if persistMog or liveMog or liveHidden then
+                -- still mogged/hidden
+            else
+                -- Overlay-only: do not wipe owned[]. Reset must not destroy cache.
+                if have and have ~= 0 then
+                    self.transmogStatusFromServer[slot] = 0
+                    if self.transmogStatusToServer then
+                        self.transmogStatusToServer[slot] = 0
+                    end
+                end
+                if self.transmogGossipIcon then
+                    self.transmogGossipIcon[slot] = nil
+                end
+            end
+        end
+    end
+end
+
 function Transmog:ChromieSlotIsMogged(slot)
     if not slot then
         return false
@@ -8,9 +79,14 @@ function Transmog:ChromieSlotIsMogged(slot)
     if have == self.HIDDEN_ITEM_ID then
         return false
     end
+    local applied = self.ChromiePersistGetApplied and self:ChromiePersistGetApplied(slot)
     local gossip = self.transmogGossipIcon and self.transmogGossipIcon[slot]
     if gossip then
-        return true
+        local haveMog = have and have ~= 0
+        local persistMog = applied and applied ~= 0
+        if haveMog or persistMog then
+            return true
+        end
     end
     if have == self.UNKNOWN_MOG_ID or (have and have > 1) then
         return true
@@ -197,23 +273,24 @@ function Transmog:ChromieDescribeMogScanResult(slot, key, entry)
     return "Could not determine transmog."
 end
 
-function Transmog:ChromieInferAppliedFromScan(slot, key)
+function Transmog:ChromieInferAppliedFromScan(slot, key, purpose)
     if not slot or not key then
-        return
+        return nil
     end
     local entry = self:ChromieUnlockEntry(key)
     if not entry then
-        return
+        return nil
     end
     local have = self.transmogStatusFromServer and self.transmogStatusFromServer[slot]
     if have == self.HIDDEN_ITEM_ID then
         entry.status = "ok"
         self:ChromiePersistSetApplied(slot, self.HIDDEN_ITEM_ID)
-        return
+        return self.HIDDEN_ITEM_ID
     end
 
+    -- Set-cache must infer the look just applied; do not merge/trust the previous mog.
     local applied = self:ChromiePersistGetApplied(slot)
-    if self:ChromieSlotIsMogged(slot) then
+    if purpose ~= "set_cache" and self:ChromieSlotIsMogged(slot) then
         if applied and applied > 1 then
             local icon = self.transmogGossipIcon and self.transmogGossipIcon[slot]
             self:ChromieUnlockMergeId(key, applied, icon)
@@ -230,8 +307,10 @@ function Transmog:ChromieInferAppliedFromScan(slot, key)
     local nMissing = self:tableSize(missing)
 
     if liveN == 0 then
-        entry.status = "needs_scan"
-        return
+        if purpose ~= "set_cache" then
+            entry.status = "needs_scan"
+        end
+        return nil
     end
 
     if not self:ChromieSlotIsMogged(slot) then
@@ -239,22 +318,24 @@ function Transmog:ChromieInferAppliedFromScan(slot, key)
             self:ChromiePersistSetApplied(slot, 0)
         end
         entry.status = "ok"
-        return
+        return 0
     end
 
     -- Gossip omits the currently applied mog. OK if that id is already in cache.
-    local applied = self:ChromiePersistGetApplied(slot)
-    applied = applied and tonumber(applied)
-    if applied and applied > 1 and self:ChromieUnlockHasId(entry, applied) and not liveSet[applied] then
-        entry.status = "ok"
-        return
-    end
-    local have = self.transmogStatusFromServer and self.transmogStatusFromServer[slot]
-    have = have and tonumber(have)
-    if have and have > 1 and self:ChromieUnlockHasId(entry, have) and not liveSet[have] then
-        entry.status = "ok"
-        self:ChromiePersistSetApplied(slot, have)
-        return
+    if purpose ~= "set_cache" then
+        local appliedNow = self:ChromiePersistGetApplied(slot)
+        appliedNow = appliedNow and tonumber(appliedNow)
+        if appliedNow and appliedNow > 1 and self:ChromieUnlockHasId(entry, appliedNow) and not liveSet[appliedNow] then
+            entry.status = "ok"
+            return appliedNow
+        end
+        local haveNow = self.transmogStatusFromServer and self.transmogStatusFromServer[slot]
+        haveNow = haveNow and tonumber(haveNow)
+        if haveNow and haveNow > 1 and self:ChromieUnlockHasId(entry, haveNow) and not liveSet[haveNow] then
+            entry.status = "ok"
+            self:ChromiePersistSetApplied(slot, haveNow)
+            return haveNow
+        end
     end
 
     local inferredMog = self:ChromieInferMogFromMissing(slot, missing, nMissing)
@@ -262,17 +343,86 @@ function Transmog:ChromieInferAppliedFromScan(slot, key)
     if inferredMog then
         entry.status = "ok"
         self:ChromiePersistSetApplied(slot, inferredMog)
-        if self.transmogStatusFromServer[slot] == self.UNKNOWN_MOG_ID then
+        if purpose == "set_cache" or self.transmogStatusFromServer[slot] == self.UNKNOWN_MOG_ID then
             self.transmogStatusFromServer[slot] = inferredMog
         end
         local want = self.transmogStatusToServer[slot]
         if want == self.UNKNOWN_MOG_ID or want == nil then
             self.transmogStatusToServer[slot] = inferredMog
         end
-        return
+        return inferredMog
     end
 
-    entry.status = "needs_scan"
+    -- Failed set-cache inference must not poison a previously OK unlock entry.
+    if purpose ~= "set_cache" then
+        entry.status = "needs_scan"
+    end
+    return nil
+end
+
+-- Match the live slot texture to an appearance in this slot's unlock cache.
+-- Returns 0 if the texture is the original item (unmogged), HIDDEN_ITEM_ID if
+-- hidden, a mog id if uniquely matched, or nil if unknown/ambiguous.
+function Transmog:ChromieMogIdFromVisibleIcon(slot)
+    if not slot then
+        return nil
+    end
+    local link = GetInventoryItemLink("player", slot)
+    if not link then
+        return nil
+    end
+    local vis = self:ChromieNormIcon(self:ChromieLiveSlotIcon(slot))
+    if vis == "hidden" then
+        return self.HIDDEN_ITEM_ID
+    end
+    if not vis then
+        return nil
+    end
+    local origTex
+    if GetItemIcon then
+        origTex = GetItemIcon(self:IDFromLink(link))
+    end
+    if not origTex then
+        origTex = select(10, GetItemInfo(link))
+    end
+    local orig = self:ChromieNormIcon(origTex)
+    if orig and vis == orig then
+        return 0
+    end
+    local key = self:ChromieCacheKeyForSlot(slot, link)
+    local char = self:ChromiePersistChar()
+    local entry = char and char.unlocks and key and char.unlocks[key]
+    if not entry or not entry.ids then
+        return nil
+    end
+    local found = nil
+    local id, stored
+    for id, stored in pairs(entry.ids) do
+        id = tonumber(id)
+        if id and id > 1 then
+            local icon = self:ChromieNormIcon(stored)
+            if not icon or icon == "" then
+                if self.cacheItem then
+                    self:cacheItem(id)
+                end
+                local tex
+                if GetItemIcon then
+                    tex = GetItemIcon(id)
+                end
+                if not tex then
+                    tex = select(10, GetItemInfo(id))
+                end
+                icon = self:ChromieNormIcon(tex)
+            end
+            if icon and icon == vis then
+                if found and found ~= id then
+                    return nil
+                end
+                found = id
+            end
+        end
+    end
+    return found
 end
 
 function Transmog:ChromieResolveAppliedMogId(slot, entry)
@@ -370,7 +520,10 @@ function Transmog:ChromieFinishSlotScan(slot)
     end
     local liveSet = self:ChromieLiveIdSet(slot)
     self:ChromieMergeLiveIntoPersist(key, slot, liveSet, iconById)
-    self:ChromieInferAppliedFromScan(slot, key)
+    if not self.chromieLastScanInferred then
+        self.chromieLastScanInferred = {}
+    end
+    self.chromieLastScanInferred[slot] = self:ChromieInferAppliedFromScan(slot, key, purpose)
     entry = self:ChromieUnlockEntry(key)
     local total = 0
     if entry and entry.ids then
@@ -407,10 +560,17 @@ function Transmog:ChromieFinishSlotScan(slot)
     if self.ChromieCacheTabRefresh then
         self:ChromieCacheTabRefresh(true)
     end
+    local inferred = self.chromieLastScanInferred and self.chromieLastScanInferred[slot]
+    if inferred and self.PreviewApplyResolvedMog then
+        local want = self.transmogStatusToServer and self.transmogStatusToServer[slot]
+        if want ~= 0 and (not want or want == self.UNKNOWN_MOG_ID or want == inferred) then
+            self:PreviewApplyResolvedMog(slot, inferred)
+        end
+    end
 end
 
 -- Queue equipped slots that still need a gossip scrape (new key / failed / never this session).
-function Transmog:ChromieQueueUnscannedSessionSlots()
+function Transmog:ChromieQueueUnscannedSessionSlots(skipProcess)
     if not self.chromieScanQueue then
         self.chromieScanQueue = {}
     end
@@ -444,9 +604,18 @@ function Transmog:ChromieQueueUnscannedSessionSlots()
         end
         i = i + 1
     end
+    if skipProcess then
+        return
+    end
     if self.ChromieProcessScanQueue then
         self:ChromieProcessScanQueue()
     end
+end
+
+function Transmog:ChromieStartScanAll(skipProcess)
+    self.chromieSessionScanned = {}
+    self.chromieScanQueue = {}
+    self:ChromieQueueUnscannedSessionSlots(skipProcess)
 end
 
 function Transmog:ChromiePublishFromPersist(slot)
@@ -516,6 +685,43 @@ function Transmog:ChromieNeedsSlotScan(slot)
     return false
 end
 
+function Transmog:ChromieUnlockCacheIsEmpty()
+    local char = self:ChromiePersistChar()
+    if not char or not char.unlocks then
+        return true
+    end
+    local _, entry
+    for _, entry in pairs(char.unlocks) do
+        if entry and entry.ids then
+            local id
+            for id in pairs(entry.ids) do
+                if id then
+                    return false
+                end
+            end
+        end
+    end
+    return true
+end
+
+-- True when every equipped transmog slot still needs a scan.
+function Transmog:ChromieCacheHasNoOkSlots()
+    local slots = self.CACHE_TAB_SLOTS or { 1, 3, 5, 6, 7, 8, 9, 10, 15, 16, 17, 18 }
+    local any = false
+    local i = 1
+    while slots[i] do
+        local slot = slots[i]
+        if self:ChromieSlotSupportsTransmog(slot) and GetInventoryItemLink("player", slot) then
+            any = true
+            if self.ChromieCacheSlotIsReportIssue and not self:ChromieCacheSlotIsReportIssue(slot) then
+                return false
+            end
+        end
+        i = i + 1
+    end
+    return any
+end
+
 function Transmog:ChromieEnqueueUnknownMogScans()
     if not self.chromieScanQueue then
         self.chromieScanQueue = {}
@@ -575,7 +781,7 @@ function Transmog:ChromieProcessScanQueue()
         return
     end
     if self.chromieJob == "sets-list" or self.chromieJob == "sets-view" then
-        self.chromieJob = "open"
+        return
     end
     if not self.chromieJob or self.chromieJob == "open" then
         if not self.chromieJob then
@@ -597,14 +803,18 @@ function Transmog:ChromieProcessScanQueue()
     if slot and self:ChromieSlotSupportsTransmog(slot) and self.ChromieScanSlot then
         self.chromieScanAnnounce = true
         if self:ChromieSlotNeedsMogResolve(slot) then
-            self.chromieScanPurpose = "mog_resolve"
-            if self.Chat then
-                local link = GetInventoryItemLink("player", slot)
-                local key = link and self:ChromieCacheKeyForSlot(slot, link)
-                local entry = key and self:ChromieUnlockEntry(key)
-                local cached = self:ChromieCountUnlockIds(entry)
-                self:Chat("Attempting to find transmog for " .. self:ChromieSlotLabelShort(slot)
-                    .. ": cache has " .. cached .. " appearances.")
+            local link = GetInventoryItemLink("player", slot)
+            local key = link and self:ChromieCacheKeyForSlot(slot, link)
+            local entry = key and self:ChromieUnlockEntry(key)
+            local cached = self:ChromieCountUnlockIds(entry)
+            if cached > 0 then
+                self.chromieScanPurpose = "mog_resolve"
+                if self.Chat then
+                    self:Chat("Attempting to find transmog for " .. self:ChromieSlotLabelShort(slot)
+                        .. ": cache has " .. cached .. " appearances.")
+                end
+            else
+                self.chromieScanPurpose = "cache"
             end
         else
             self.chromieScanPurpose = "cache"

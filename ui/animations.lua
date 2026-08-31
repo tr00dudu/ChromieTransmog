@@ -62,14 +62,36 @@ end
 
 
 -- Queues a slot for the apply/reset animation sequence.
-function Transmog:addTransmogAnim(id, reset)
+function Transmog:ChromieInitItemAnimFrame(entry)
+    if not entry then
+        return
+    end
+    if entry.autocast then
+        entry.autocast:Hide()
+    end
+    if entry.reset then
+        entry.borderFull:Show()
+        entry.borderFull:SetAlpha(.9)
+        entry.borderHi:Show()
+        entry.borderHi:SetWidth(48)
+        entry.borderHi:SetHeight(48)
+    else
+        entry.borderFull:Show()
+        entry.borderFull:SetAlpha(.2)
+        entry.borderHi:Show()
+        entry.borderHi:SetWidth(32)
+        entry.borderHi:SetHeight(32)
+    end
+end
+
+function Transmog:addTransmogAnim(id, reset, hold)
 	twfdebug("addTransmogAnim id: "..id)
 
     for slotName, InventorySlotId in pairs(self.inventorySlots) do
         if id == InventorySlotId then
             local frame = getglobal(slotName)
             if frame then
-                self.itemAnimationFrames[self:tableSize(self.itemAnimationFrames) + 1] = {
+                local entry = {
                     ['frame'] = frame,
                     ['borderHi'] = getglobal(frame:GetName() .. "BorderHi"),
                     ['borderFull'] = getglobal(frame:GetName() .. "BorderFull"),
@@ -77,12 +99,29 @@ function Transmog:addTransmogAnim(id, reset)
                     ['reset'] = reset,
                     ['dir'] = 1
                 }
+                table.insert(self.itemAnimationFrames, entry)
+                if not hold then
+                    self:ChromieInitItemAnimFrame(entry)
+                end
                 break
             end
         end
     end
 
-    self.itemAnimation:Show()
+    if not hold then
+        self.itemAnimation:Show()
+    end
+end
+
+function Transmog:ChromieStartItemAnim()
+    local i = 1
+    while self.itemAnimationFrames[i] do
+        self:ChromieInitItemAnimFrame(self.itemAnimationFrames[i])
+        i = i + 1
+    end
+    if self.itemAnimationFrames[1] then
+        self.itemAnimation:Show()
+    end
 end
 
 -- Hides autocast animation overlays on all equipment slots.
@@ -132,21 +171,10 @@ Transmog.itemAnimation:Hide()
 
 Transmog.itemAnimation:SetScript("OnShow", function()
     this.startTime = GetTime()
-    for _, frame in ipairs(Transmog.itemAnimationFrames) do
-        frame.autocast:Hide()
-        if frame.reset then
-            frame.borderFull:Show()
-            frame.borderFull:SetAlpha(.9)
-            frame.borderHi:Show()
-            frame.borderHi:SetWidth(48)
-            frame.borderHi:SetHeight(48)
-        else
-            frame.borderFull:Show()
-            frame.borderFull:SetAlpha(.2)
-            frame.borderHi:Show()
-            frame.borderHi:SetWidth(32)
-            frame.borderHi:SetHeight(32)
-        end
+    local i = 1
+    while Transmog.itemAnimationFrames[i] do
+        Transmog:ChromieInitItemAnimFrame(Transmog.itemAnimationFrames[i])
+        i = i + 1
     end
 end)
 Transmog.itemAnimation:SetScript("OnHide", function()
@@ -161,7 +189,9 @@ Transmog.itemAnimation:SetScript("OnUpdate", function()
     local st = (this.startTime + plus) * 1000
     if gt >= st then
 
-        for index, frame in ipairs(Transmog.itemAnimationFrames) do
+        local i = 1
+        while Transmog.itemAnimationFrames[i] do
+            local frame = Transmog.itemAnimationFrames[i]
             if frame.reset then
                 frame.borderFull:SetAlpha(frame.borderFull:GetAlpha() - 0.05)
                 if frame.borderHi:GetWidth() > 32 then
@@ -179,16 +209,24 @@ Transmog.itemAnimation:SetScript("OnUpdate", function()
                 frame.dir = -1
             end
             if frame.borderFull:GetAlpha() <= 0.1 then
-                frame.borderHi:Hide()
                 frame.borderHi:SetWidth(48)
                 frame.borderHi:SetHeight(48)
-
-                Transmog.itemAnimationFrames[index] = nil
+                if frame.reset then
+                    frame.borderHi:Hide()
+                else
+                    frame.borderHi:Show()
+                end
+                table.remove(Transmog.itemAnimationFrames, i)
+            else
+                i = i + 1
             end
         end
 
-        if Transmog:tableSize(Transmog.itemAnimationFrames) == 0 then
+        if not Transmog.itemAnimationFrames[1] then
             Transmog.itemAnimation:Hide()
+            if Transmog.transmogStatus then
+                Transmog:transmogStatus()
+            end
         end
 
         this.startTime = GetTime()

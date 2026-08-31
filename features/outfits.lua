@@ -86,9 +86,21 @@ function Transmog:ChromieDeselectSet()
 end
 
 function Transmog:ChromieHasSetName(name)
+    if not name then
+        return false
+    end
     local names = self.chromieSets or {}
     local i = 1
     while names[i] do
+        if names[i] == name then
+            return true
+        end
+        i = i + 1
+    end
+    local char = self.ChromiePersistChar and self:ChromiePersistChar()
+    names = char and char.sets and char.sets.names
+    i = 1
+    while names and names[i] do
         if names[i] == name then
             return true
         end
@@ -185,7 +197,7 @@ function Transmog:ChromieEnsureManageSetsFrame()
     how:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
     how:SetWidth(430)
     how:SetJustifyH("LEFT")
-    how:SetText("A set stores the transmogs currently applied to your gear (It does not store the pending preview changes). Pick a set from the dropdown to quick apply it. Applying already saved sets from the dropdown is free. Saving or updating a set costs gold.")
+    how:SetText("A set stores the transmogs currently applied to your gear (It does not store the pending preview changes). Pick a set from the dropdown to quick apply it. Applying already saved sets from the dropdown is free. Saving a set costs gold.")
 
     local addLabel = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     addLabel:SetPoint("TOPLEFT", how, "BOTTOMLEFT", 0, -14)
@@ -396,6 +408,9 @@ function Transmog:ChromieRefreshManageSets()
     if self.manageSetsOpen then
         self:ChromieRefreshManageSetList()
     end
+    if self.ChromieHomeTabRefresh then
+        self:ChromieHomeTabRefresh()
+    end
 end
 
 function Transmog:ChromieShowManageSets()
@@ -404,6 +419,12 @@ function Transmog:ChromieShowManageSets()
     end
     self:hideItems(true)
     self:hidePagination()
+    if self.ChromieHomeTabHide then
+        self:ChromieHomeTabHide()
+    end
+    if self.ChromieAboutTabHide then
+        self:ChromieAboutTabHide()
+    end
     ChromieTransmogFrameSplash:Hide()
     ChromieTransmogFrameInstructions:Hide()
     ChromieTransmogFrameNoTransmogs:Hide()
@@ -435,6 +456,12 @@ function Transmog_LoadOutfit(self, outfit)
         return
     end
     Transmog:Chat("Applying set \"" .. tostring(outfit) .. "\"...")
+    if Transmog.ChromieLastUsedRecord then
+        Transmog:ChromieLastUsedRecord(outfit)
+    end
+    if Transmog.ChromieHomeTabRefresh then
+        Transmog:ChromieHomeTabRefresh()
+    end
     Transmog.chromieQuickApplySetName = outfit
     Transmog:ChromieHideSetCreate()
     selectTransmogSlot(-1)
@@ -540,9 +567,6 @@ end
 
 -- Set cache on quick-apply (merged from set_cache.lua; must live in a file that loads reliably)
 function Transmog:ChromieSetCacheDbg(msg)
-    if self.Chat then
-        self:Chat("[SetCache] " .. tostring(msg))
-    end
 end
 
 function Transmog:ChromieSetCacheSlotSummary(slot)
@@ -602,19 +626,10 @@ function Transmog:ChromieSetCacheCollectSlots()
         elseif self.transmogStatusFromServer[slot] == self.HIDDEN_ITEM_ID then
             items[slot] = self.HIDDEN_ITEM_ID
             self:ChromieSetCacheDbg("collect hidden " .. self:ChromieSetCacheSlotSummary(slot))
-        elseif self:ChromieSlotIsMogged(slot) then
-            local mogId = self:ChromieResolveAppliedMogId(slot)
-            mogId = mogId and tonumber(mogId)
-            if mogId and mogId > 1 then
-                items[slot] = mogId
-                self:ChromieSetCacheDbg("collect resolved " .. self:ChromieSetCacheSlotSummary(slot) .. " -> " .. mogId)
-            else
-                table.insert(scanSlots, slot)
-                self:ChromieSetCacheDbg("collect needs scan " .. self:ChromieSetCacheSlotSummary(slot))
-            end
-        else
-            items[slot] = 0
-            self:ChromieSetCacheDbg("collect unmogged " .. self:ChromieSetCacheSlotSummary(slot))
+        elseif self:ChromieSlotTextureIsMogged(slot) then
+            -- Always re-scan. Resolve would reuse the previous look (same base gear).
+            table.insert(scanSlots, slot)
+            self:ChromieSetCacheDbg("collect needs scan " .. self:ChromieSetCacheSlotSummary(slot))
         end
     end
     return scanSlots, items
@@ -629,12 +644,11 @@ function Transmog:ChromieSetCacheRecordSlot(slot)
     if self.transmogStatusFromServer[slot] == self.HIDDEN_ITEM_ID then
         mogId = self.HIDDEN_ITEM_ID
     elseif self:ChromieSlotIsMogged(slot) then
-        mogId = self:ChromieResolveAppliedMogId(slot)
-        if not mogId or mogId <= 1 then
-            mogId = self:ChromiePersistGetApplied(slot)
-        end
-        mogId = mogId and tonumber(mogId)
-        if mogId and mogId == self.UNKNOWN_MOG_ID then
+        local inferred = self.chromieLastScanInferred and self.chromieLastScanInferred[slot]
+        inferred = inferred and tonumber(inferred)
+        if inferred and inferred > 1 then
+            mogId = inferred
+        else
             mogId = nil
         end
     end
@@ -676,8 +690,6 @@ function Transmog:ChromieSetCacheFinish()
         if not id or (id <= 1 and id ~= self.HIDDEN_ITEM_ID) then
             self:ChromieSetCacheDbg("finish abort: missing mog on " .. self:ChromieSetCacheSlotSummary(slot)
                 .. " recorded=" .. tostring(id))
-            self:Chat("Could not cache set \"" .. tostring(job.name) .. "\": mog unknown on "
-                .. self:ChromieSlotLabelShort(slot) .. ".")
             return
         end
         i = i + 1
@@ -695,7 +707,6 @@ function Transmog:ChromieSetCacheFinish()
     end
     table.sort(parts)
     self:ChromieSetCacheDbg("persisted {" .. table.concat(parts, ", ") .. "}")
-    self:Chat("Cached set \"" .. tostring(job.name) .. "\".")
     if self.ChromieCacheTabRefresh then
         self:ChromieCacheTabRefresh(true)
     end
@@ -713,7 +724,7 @@ function Transmog:ChromieSetCacheScanNext()
         job.index = job.index + 1
         job.currentSlot = slot
         self:ChromieSetCacheDbg("scan slot " .. self:ChromieSetCacheSlotSummary(slot))
-        if self.ChromieScanSlot(slot, { force = true, purpose = "set_cache", announce = false }) then
+        if self:ChromieScanSlot(slot, { force = true, purpose = "set_cache", announce = false }) then
             self:ChromieSetCacheDbg("ChromieScanSlot started for slot " .. tostring(slot))
             return
         end
@@ -786,7 +797,8 @@ function Transmog:ChromieDeferSetCacheApply(name)
     frame:Show()
     frame:SetScript("OnUpdate", function(f)
         f.elapsed = (f.elapsed or 0) + arg1
-        if f.elapsed < 0.05 then
+        -- Wait for appearance packets after Use this set before snapshotting mogs.
+        if f.elapsed < (Transmog.SET_CACHE_APPLY_DELAY or 0.4) then
             return
         end
         f:Hide()
@@ -807,33 +819,119 @@ function Transmog:ChromieScheduleCacheSetOnApply(name)
     self:ChromieDeferSetCacheApply(name)
 end
 
+Transmog.SET_CACHE_APPLY_DELAY = 0.4
+
+function Transmog:ChromieSetCacheItemsFromWorn()
+    local scanSlots = {}
+    local items = {}
+    local _, slot
+    for _, slot in pairs(self.inventorySlots or {}) do
+        if not self:ChromieSlotSupportsTransmog(slot) then
+            -- skip
+        elseif not GetInventoryItemLink("player", slot) then
+            -- skip
+        elseif (self.transmogStatusFromServer and self.transmogStatusFromServer[slot] == self.HIDDEN_ITEM_ID)
+            or (self.ChromieSlotTextureIsHidden and self:ChromieSlotTextureIsHidden(slot)) then
+            items[slot] = self.HIDDEN_ITEM_ID
+        elseif self:ChromieSlotIsMogged(slot) then
+            local id = self.ChromieResolveAppliedMogId and self:ChromieResolveAppliedMogId(slot)
+            if (not id or id <= 1) and self.ChromiePersistGetApplied then
+                id = self:ChromiePersistGetApplied(slot)
+            end
+            id = id and tonumber(id)
+            if (not id or id <= 1) and self.transmogStatusFromServer then
+                local have = self.transmogStatusFromServer[slot]
+                if have and have > 1 then
+                    id = have
+                end
+            end
+            if id and id > 1 then
+                items[slot] = id
+            else
+                table.insert(scanSlots, slot)
+            end
+        end
+    end
+    return scanSlots, items
+end
+
+function Transmog:ChromieCacheSetFromWorn(name)
+    if not name then
+        return false
+    end
+    if self.ChromieSetIsCached and self:ChromieSetIsCached(name) then
+        return false
+    end
+    local scanSlots, items = self:ChromieSetCacheItemsFromWorn()
+    if scanSlots[1] then
+        if ChromieTransmogFrame and ChromieTransmogFrame:IsShown()
+            and self.chromieJob ~= "load" and self.chromieJob ~= "apply"
+            and not self:ChromieIsSetJob() and not self.chromieWaitingForNpc then
+            if self.ChromieMaybeCacheSetOnApply then
+                self:ChromieMaybeCacheSetOnApply(name)
+            end
+        else
+            self.chromiePendingSetCache = name
+        end
+        return true
+    end
+    if self.ChromiePersistEnsureSetName then
+        self:ChromiePersistEnsureSetName(name)
+    end
+    if self.ChromiePersistSetItems then
+        self:ChromiePersistSetItems(name, items)
+    end
+    if self.ChromieCacheTabRefresh then
+        self:ChromieCacheTabRefresh(true)
+    end
+    if self.ChromieHomeTabRefresh then
+        self:ChromieHomeTabRefresh()
+    end
+    return false
+end
+
+-- After name scrape / save: cache one uncached set from the worn look when possible.
+function Transmog:ChromieTryCacheUnknownSets()
+    if self.setCacheJob then
+        return false
+    end
+    local name = self.chromiePendingSetCache
+    self.chromiePendingSetCache = nil
+    if not name then
+        local char = self.ChromiePersistChar and self:ChromiePersistChar()
+        local unknown = char and char.sets and char.sets.unknown
+        if unknown and unknown[1] and not unknown[2] then
+            name = unknown[1]
+        end
+    end
+    if not name or (self.ChromieSetIsCached and self:ChromieSetIsCached(name)) then
+        return false
+    end
+    self:ChromieCacheSetFromWorn(name)
+    return self.setCacheJob and true or false
+end
+
 function Transmog:ChromieMaybeCacheSetOnApply(name)
     self:ChromieSetCacheDbg("maybeCache \"" .. tostring(name) .. "\" job=" .. tostring(self.chromieJob)
         .. " vendor=" .. tostring(self.chromieVendorOpen)
         .. " frame=" .. tostring(ChromieTransmogFrame and ChromieTransmogFrame:IsShown()))
     if not name then
-        self:Chat("[SetCache] skip: no set name.")
         return
     end
     if self.setCacheJob then
-        self:Chat("[SetCache] skip: cache job already running.")
         return
     end
     if self.chromieVendorOpen then
-        self:Chat("[SetCache] skip: vendor mode (.t i on).")
         return
     end
     if not ChromieTransmogFrame or not ChromieTransmogFrame:IsShown() then
-        self:Chat("[SetCache] skip: transmog window closed.")
         return
     end
     if self.chromieJob == "load" or self.chromieJob == "apply" then
-        self:Chat("[SetCache] defer: Warpweaver busy (" .. tostring(self.chromieJob) .. ").")
         self:ChromieDeferSetCacheApply(name)
         return
     end
     if self:ChromieSetIsCached(name) then
-        self:Chat("Set \"" .. tostring(name) .. "\" already cached.")
         self.lastAppliedSetName = name
         if self.ChromieCacheTabRefresh then
             self:ChromieCacheTabRefresh(true)
@@ -848,14 +946,6 @@ function Transmog:ChromieMaybeCacheSetOnApply(name)
         i = i + 1
     end
     self:ChromieSetCacheDbg("scan queue: [" .. table.concat(scanList, ", ") .. "]")
-    if scanSlots[1] and not self:ChromieUnlockCacheHealthyForSlots(scanSlots) then
-        self:Chat("Set \"" .. tostring(name) .. "\" not cached: scan those mogged slots in the Cache tab first.")
-        self.lastAppliedSetName = name
-        if self.ChromieCacheTabRefresh then
-            self:ChromieCacheTabRefresh(true)
-        end
-        return
-    end
     self.setCacheJob = {
         name = name,
         scanSlots = scanSlots,
@@ -864,7 +954,6 @@ function Transmog:ChromieMaybeCacheSetOnApply(name)
     }
     self.lastAppliedSetName = name
     if scanSlots[1] then
-        self:Chat("Caching set \"" .. tostring(name) .. "\"...")
         self:ChromieDeferSetCacheScanNext()
     else
         self:ChromieSetCacheDbg("no scans needed, persisting from resolved/hidden slots")

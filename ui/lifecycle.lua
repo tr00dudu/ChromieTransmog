@@ -30,6 +30,10 @@ function Transmog_OnLoad()
 
     Transmog:CacheOutfitsItems()
 
+    if Transmog.ChromieRestorePersistSession then
+        Transmog:ChromieRestorePersistSession()
+    end
+
     Transmog.newTransmogAlert:HideAnchor()
 
     Transmog.delayedLoad:Show()
@@ -65,7 +69,14 @@ function ChromieTransmogFrame_OnShow()
     Transmog.currentTransmogSlot = nil
     Transmog.currentTransmogSlotName = nil
     Transmog.currentTransmogItemClass = nil
-    Transmog_switchTab('items')
+    if Transmog.ChromieRestorePersistSession then
+        Transmog:ChromieRestorePersistSession()
+    end
+    local tab = "home"
+    if Transmog.ChromieCacheTabNeedsAttention and Transmog:ChromieCacheTabNeedsAttention() then
+        tab = "cache"
+    end
+    Transmog_switchTab(tab)
     SetPortraitTexture(ChromieTransmogFramePortrait, UnitExists("npc") and "npc" or "target");
 
     Transmog:Reset()
@@ -74,12 +85,23 @@ function ChromieTransmogFrame_OnShow()
         Transmog:ChromieCacheSyncMaybePrompt()
     end
 
-	Transmog:hideItems(false)
-
     if not Transmog.chromieJob or Transmog.chromieJob == "open" then
         Transmog.chromieJob = "open"
     end
-    if Transmog.ChromieEnqueueUnknownMogScans then
+    local emptyCache = Transmog.ChromieUnlockCacheIsEmpty and Transmog:ChromieUnlockCacheIsEmpty()
+    if not emptyCache and Transmog.ChromieCacheHasNoOkSlots then
+        emptyCache = Transmog:ChromieCacheHasNoOkSlots()
+    end
+    if emptyCache then
+        Transmog.chromieEmptyCacheScan = true
+        Transmog.chromieScanRescanDone = nil
+        if Transmog.ChromieStartScanAll then
+            Transmog:ChromieStartScanAll(true)
+        elseif Transmog.ChromieQueueUnscannedSessionSlots then
+            Transmog:ChromieQueueUnscannedSessionSlots(true)
+        end
+    elseif Transmog.ChromieEnqueueUnknownMogScans then
+        Transmog.chromieEmptyCacheScan = nil
         Transmog:ChromieEnqueueUnknownMogScans()
     end
 
@@ -135,6 +157,8 @@ function Transmog_OnHide()
     end
     Transmog.chromieScanQueue = nil
     Transmog.chromieSessionScanned = nil
+    Transmog.chromieEmptyCacheScan = nil
+    Transmog.chromieScanRescanDone = nil
     if StaticPopup_Hide then
         StaticPopup_Hide("CHROMIE_TRANSMOG_CACHE_SYNC")
     end
@@ -165,6 +189,9 @@ function Transmog_OnHide()
     Transmog.allowGossipClose = true
     CloseGossip()
     Transmog.allowGossipClose = nil
+    if Transmog.ChromieHomeTabShutdown then
+        Transmog:ChromieHomeTabShutdown()
+    end
     if CloseMerchant then
         CloseMerchant()
     end
@@ -213,7 +240,7 @@ function Transmog:Reset(once)
     end
     self:PreviewRedress(0)
 
-    Transmog_switchTab(self.tab ~= "" and self.tab or "items")
+    Transmog_switchTab(self.tab ~= "" and self.tab or "home")
     AddButtonOnEnterTextTooltip(ChromieTransmogFrameRevert, "Reset")
     self:calculateCost()
 
