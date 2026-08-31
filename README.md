@@ -27,7 +27,7 @@ Screenshots
 --------
 
 <p align="center">
-  <img width="826" height="692" alt="image" src="" />
+  <img width="932" height="637" alt="image" src="https://github.com/user-attachments/assets/02efd2c6-80ba-4213-8815-fd44cdeb6a40" />
   <br>
   <em>Home tab: last used sets with 3D previews, Apply Set, and cache status</em>
 </p>
@@ -35,7 +35,7 @@ Screenshots
 <br>
 
 <p align="center">
-  <img width="826" height="692" alt="image" src="" />
+  <img width="924" height="632" alt="image" src="https://github.com/user-attachments/assets/b41d4c9a-af68-4d2a-87d3-842d1cb1164a" />
   <br>
   <em>Slot appearance grid and left-side paperdoll preview</em>
 </p>
@@ -43,23 +43,7 @@ Screenshots
 <br>
 
 <p align="center">
-  <img width="587" height="338" alt="image" src="" />
+  <img width="403" height="330" alt="image" src="https://github.com/user-attachments/assets/b3bbc3bd-a560-48fb-8548-ec011477e695" />
   <br>
-  <em>Sets tab: Warpweaver set list, save, apply, delete</em>
-</p>
-
-<br>
-
-<p align="center">
-  <img width="587" height="338" alt="image" src="" />
-  <br>
-  <em>Cache tab: per-slot unlock status and Drop cache</em>
-</p>
-
-<br>
-
-<p align="center">
-  <img width="446" height="80" alt="image" src="" />
-  <br>
-  <em>Character sheet tooltip: Transmogrified appearance name</em>
+  <em>Character sheet tooltip and icon: Transmogrified appearance name and the icon shows the original item</em>
 </p>
