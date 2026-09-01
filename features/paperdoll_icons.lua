@@ -67,10 +67,17 @@ function Transmog:ChromieRestoreSlotIcon(button, unit)
     end
     local tex = originalItemTexture(unit, slot)
     if not tex then
+        local itemId = Transmog:IDFromLink(GetInventoryItemLink(unit, slot))
+        if itemId and Transmog.cacheItem then
+            Transmog:cacheItem(itemId)
+        end
         return
     end
-    SetItemButtonTexture(button, tex)
-    local icon = getglobal(button:GetName() .. "Icon")
+    if SetItemButtonTexture then
+        SetItemButtonTexture(button, tex)
+    end
+    local icon = getglobal(button:GetName() .. "IconTexture")
+        or getglobal(button:GetName() .. "Icon")
     if icon and icon.SetTexture then
         icon:SetTexture(tex)
     end
@@ -89,8 +96,14 @@ function Transmog:ChromieRefreshPaperdollIcons(unit)
         local name = map[slot]
         if name then
             local button = getglobal(name)
-            if button and GetInventoryItemLink(unit, slot) then
-                self:ChromieRestoreSlotIcon(button, unit)
+            if button then
+                local link = GetInventoryItemLink(unit, slot)
+                if link then
+                    if self.cacheItem then
+                        self:cacheItem(link)
+                    end
+                    self:ChromieRestoreSlotIcon(button, unit)
+                end
             end
         end
         i = i + 1
@@ -430,25 +443,54 @@ local function hookPaperDoll()
     end
 end
 
+local inspectRetry = CreateFrame("Frame")
+inspectRetry:Hide()
+inspectRetry:SetScript("OnUpdate", function()
+    if GetTime() < (inspectRetry.untilTime or 0) then
+        return
+    end
+    inspectRetry.left = (inspectRetry.left or 0) - 1
+    inspectRetry.untilTime = GetTime() + 0.15
+    if Transmog.ChromieRefreshPaperdollIcons then
+        Transmog:ChromieRefreshPaperdollIcons(inspectUnit())
+    end
+    if inspectRetry.left <= 0 then
+        inspectRetry:Hide()
+    end
+end)
+
+function Transmog:ChromieQueueInspectIconRefresh()
+    inspectRetry.left = 8
+    inspectRetry.untilTime = 0
+    inspectRetry:Show()
+end
+
 local function hookInspect()
     if Transmog.chromieHookedInspect then
         return
     end
-    if not InspectPaperDollItemSlotButton_Update then
+    -- 3.3.5 Inspect UI is LoadOnDemand; wait until its functions exist.
+    if not InspectPaperDollItemSlotButton_Update and not InspectPaperDollFrame_OnShow and not InspectFrame then
         return
     end
     Transmog.chromieHookedInspect = true
-    hooksecurefunc("InspectPaperDollItemSlotButton_Update", function(button)
-        Transmog:ChromieRestoreSlotIcon(button, inspectUnit())
-    end)
-    if InspectPaperDollFrame_Update then
-        hooksecurefunc("InspectPaperDollFrame_Update", function()
+    if InspectPaperDollItemSlotButton_Update then
+        hooksecurefunc("InspectPaperDollItemSlotButton_Update", function(button)
+            button = button or this
+            Transmog:ChromieRestoreSlotIcon(button, inspectUnit())
+        end)
+    end
+    -- 3.3.5 has OnShow, not InspectPaperDollFrame_Update.
+    if InspectPaperDollFrame_OnShow then
+        hooksecurefunc("InspectPaperDollFrame_OnShow", function()
             Transmog:ChromieRefreshPaperdollIcons(inspectUnit())
+            Transmog:ChromieQueueInspectIconRefresh()
         end)
     end
     if InspectFrame then
         InspectFrame:HookScript("OnShow", function()
             Transmog:ChromieRefreshPaperdollIcons(inspectUnit())
+            Transmog:ChromieQueueInspectIconRefresh()
         end)
     end
 end
