@@ -13,6 +13,7 @@ features\unlock_cache.lua
 features\chromie_backend.lua
 features\cache_sync.lua
 features\paperdoll_icons.lua
+features\inspect_mog_probe.lua
 features\probe_log.lua
 features\apply_transmog.lua
 features\outfits.lua
