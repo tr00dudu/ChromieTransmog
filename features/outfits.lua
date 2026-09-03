@@ -183,8 +183,8 @@ function Transmog:ChromieEnsureManageSetsFrame()
     end
 
     local f = CreateFrame("Frame", "ChromieTransmogManageSets", ChromieTransmogFrame)
-    f:SetWidth(455)
-    f:SetHeight(370)
+    f:SetWidth(470)
+    f:SetHeight(418)
     f:SetPoint("TOPLEFT", ChromieTransmogFrame, "TOPLEFT", 255, -88)
     f:SetFrameLevel(ChromieTransmogFrame:GetFrameLevel() + 6)
     f:Hide()
@@ -195,9 +195,9 @@ function Transmog:ChromieEnsureManageSetsFrame()
 
     local how = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     how:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
-    how:SetWidth(430)
+    how:SetWidth(445)
     how:SetJustifyH("LEFT")
-    how:SetText("A set stores the transmogs currently applied to your gear (It does not store the pending preview changes). Pick a set from the dropdown to quick apply it. Applying already saved sets from the dropdown is free. Saving a set costs gold.")
+    how:SetText("A set stores only the transmogs currently applied to your gear (It does not store the pending preview changes). Applying already saved sets from the dropdown is free. Saving a set costs gold. You can have a max of 10 sets.")
 
     local addLabel = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     addLabel:SetPoint("TOPLEFT", how, "BOTTOMLEFT", 0, -14)
@@ -307,11 +307,10 @@ function Transmog:ChromieEnsureManageSetsFrame()
         nameText:SetJustifyH("LEFT")
         row.nameText = nameText
 
-        local del = CreateFrame("Button", "ChromieTransmogManageSetRow" .. i .. "Delete", row, "UIPanelButtonTemplate")
-        del:SetWidth(65)
+        local del = CreateFrame("Button", "ChromieTransmogManageSetRow" .. i .. "Delete", row, "UIPanelCloseButton")
+        del:SetWidth(20)
         del:SetHeight(20)
-        del:SetPoint("RIGHT", 18, 0)
-        del:SetText("Delete")
+        del:SetPoint("RIGHT", 38, 0)
         del:SetScript("OnClick", function()
             local setName = this:GetParent().setName
             if setName then
@@ -323,11 +322,28 @@ function Transmog:ChromieEnsureManageSetsFrame()
         del:SetScript("OnMouseWheel", function(self, delta)
             manageSetsWheel(delta or arg1)
         end)
+
+        local apply = CreateFrame("Button", "ChromieTransmogManageSetRow" .. i .. "Apply", row, "UIPanelButtonTemplate")
+        apply:SetWidth(50)
+        apply:SetHeight(20)
+        apply:SetPoint("RIGHT", del, "LEFT", -2, 0)
+        apply:SetText("Apply")
+        apply:SetScript("OnClick", function()
+            local setName = this:GetParent().setName
+            if setName then
+                Transmog_LoadOutfit(nil, setName)
+            end
+        end)
+        apply:EnableMouseWheel(true)
+        apply:SetScript("OnMouseWheel", function(self, delta)
+            manageSetsWheel(delta or arg1)
+        end)
         row:EnableMouseWheel(true)
         row:SetScript("OnMouseWheel", function(self, delta)
             manageSetsWheel(delta or arg1)
         end)
         row.del = del
+        row.apply = apply
         row:Hide()
         f.rows[i] = row
         i = i + 1
@@ -469,7 +485,11 @@ function Transmog_LoadOutfit(self, outfit)
     end
     Transmog.chromieQuickApplySetName = outfit
     Transmog:ChromieHideSetCreate()
-    selectTransmogSlot(-1)
+    if Transmog.tab == "items" then
+        Transmog_switchTab("home")
+    else
+        selectTransmogSlot(-1)
+    end
     UIDropDownMenu_SetText(ChromieTransmogFrameOutfits, Transmog:ChromieSetsDropdownLabel())
     ChromieTransmogFrameSaveOutfit:Hide()
     Transmog:hideItemBorders()

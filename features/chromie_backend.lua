@@ -1622,7 +1622,7 @@ function Transmog:ChromieApplySetItemsLocally(name)
 end
 
 function Transmog:ChromieRefreshUiAfterSetUse(name)
-    if self.ChromieHideManageSets then
+    if self.tab ~= "sets" and self.ChromieHideManageSets then
         self:ChromieHideManageSets()
     end
     selectTransmogSlot(-1)

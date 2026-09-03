@@ -764,7 +764,7 @@ function selectTransmogSlot(InventorySlotId, slotName)
 
     ChromieTransmogFrameNoTransmogs:Hide()
 
-    if Transmog.ChromieHideManageSets then
+    if InventorySlotId ~= -1 and Transmog.ChromieHideManageSets then
         Transmog:ChromieHideManageSets()
     end
 

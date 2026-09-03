@@ -99,6 +99,50 @@ function Transmog:prepareAvailableTransmogs(slot, itemClass)
         })
     end
 
+    -- Gossip omits the worn base item while mogged. Keep it next to Hide (or first
+    -- if the slot cannot hide). reset=true shows the revert overlay; click undoes.
+    local eqId = self.equippedItems and tonumber(self.equippedItems[slot])
+    local list = self.availableTransmogItems[slot][itemClass]
+    if eqId and eqId > 1 and list then
+        local eqEntry = nil
+        local j = 1
+        while list[j] do
+            if list[j].id == eqId then
+                eqEntry = table.remove(list, j)
+                break
+            end
+            j = j + 1
+        end
+        if not eqEntry then
+            local name, link, quality, _, _, class, subclass, _, inv_type, tex = GetItemInfo(eqId)
+            if not name then
+                self:cacheItem(eqId)
+                Transmog.availableTransmogsCacheDelay.InventorySlotId = slot
+                Transmog.availableTransmogsCacheDelay.ItemClass = itemClass
+                Transmog.availableTransmogsCacheDelay:Show()
+                return
+            end
+            local invLink = GetInventoryItemLink("player", slot)
+            eqEntry = {
+                ['id'] = eqId,
+                ['name'] = name,
+                ['link'] = link,
+                ['quality'] = quality,
+                ['t1'] = class,
+                ['t2'] = subclass,
+                ['equip_slot'] = inv_type,
+                ['tex'] = tex,
+                ['itemLink'] = invLink,
+            }
+        end
+        eqEntry.reset = true
+        local at = 1
+        if list[1] and list[1].id == self.HIDDEN_ITEM_ID then
+            at = 2
+        end
+        table.insert(list, at, eqEntry)
+    end
+
     twfdebug("prepareAvailableTransmogs end")
 end
 
@@ -141,14 +185,19 @@ function Transmog:renderAvailableTransmogs(slot, itemClass)
             getglobal('TransmogLook' .. itemIndex .. 'ButtonRevert'):Hide()
             getglobal('TransmogLook' .. itemIndex .. 'ButtonCheck'):Hide()
 
-            if item.id == self.transmogStatusToServer[slot] then
+            if item.id == self.transmogStatusToServer[slot]
+                or (item.reset and (not self.transmogStatusToServer[slot] or self.transmogStatusToServer[slot] == 0)) then
                 getglobal('TransmogLook' .. itemIndex .. 'Button'):SetNormalTexture('Interface\\AddOns\\ChromieTransmog\\assets\\item_bg_selected')
             else
                 getglobal('TransmogLook' .. itemIndex .. 'Button'):SetNormalTexture('Interface\\AddOns\\ChromieTransmog\\assets\\item_bg_normal')
             end
 
             local _, _, _, color = GetItemQualityColor(item.quality)
-            AddButtonOnEnterTextTooltip(getglobal('TransmogLook' .. itemIndex .. 'Button'), color .. item.name)
+            if item.reset then
+                AddButtonOnEnterTextTooltip(getglobal('TransmogLook' .. itemIndex .. 'Button'), color .. item.name, "Original appearance")
+            else
+                AddButtonOnEnterTextTooltip(getglobal('TransmogLook' .. itemIndex .. 'Button'), color .. item.name)
+            end
             if item.reset then
                 getglobal('TransmogLook' .. itemIndex .. 'ButtonRevert'):Show()
             end
@@ -325,13 +374,13 @@ function Transmog:renderAvailableTransmogs(slot, itemClass)
 
             if self.currentTransmogSlot == self.inventorySlots['SecondaryHandSlot'] then
                 model:SetRotation(-0.61)
-                self:ChromieLookSetPosition(model, Z + 3.8, X, Y)
                 if self.race == 'gnome' then
                     Y = Y - 1.5
                 end
                 if self.race == 'dwarf' then
                     Y = Y - 1
                 end
+                self:ChromieLookSetPosition(model, Z + 3.8, X, Y)
             end
 
             if self.currentTransmogSlot == self.inventorySlots['RangedSlot'] then
