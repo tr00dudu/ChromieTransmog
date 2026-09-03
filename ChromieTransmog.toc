@@ -1,5 +1,6 @@
 ## Interface: 30300
 ## Title: ChromieTransmog
+## Version: 0.9.4
 ## Notes: ChromieCraft transmog UI. Modified from Stefan2102/mod-transmog-plus to work with azerothcore/mod-transmog (gossip/vendor), not the plus addon protocol.
 ## SavedVariables: ChromieTransmogDB
 core\bootstrap.lua
