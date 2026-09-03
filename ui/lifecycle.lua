@@ -30,6 +30,19 @@ function Transmog_OnLoad()
 
     Transmog:CacheOutfitsItems()
 
+    if ChromieTransmogFrameCloseButton and not Transmog.showGossipBtn then
+        local b = CreateFrame("Button", "ChromieTransmogShowGossipButton", ChromieTransmogFrame, "UIPanelButtonTemplate")
+        b:SetWidth(96)
+        b:SetHeight(20)
+        b:SetPoint("RIGHT", ChromieTransmogFrameCloseButton, "LEFT", -2, 0)
+        b:SetFrameLevel(ChromieTransmogFrameCloseButton:GetFrameLevel() + 1)
+        b:SetText("Show gossip")
+        b:SetScript("OnClick", function()
+            Transmog:ChromieShowNativeGossip()
+        end)
+        Transmog.showGossipBtn = b
+    end
+
     if Transmog.ChromieRestorePersistSession then
         Transmog:ChromieRestorePersistSession()
     end
@@ -187,6 +200,9 @@ function Transmog_OnHide()
             Transmog:ChromieHideManageSets()
         end
         UIDropDownMenu_SetText(ChromieTransmogFrameOutfits, Transmog:ChromieSetsDropdownLabel())
+        if Transmog.ChromieHomeTabShutdown then
+            Transmog:ChromieHomeTabShutdown()
+        end
         return
     end
     Transmog.chromieVendorOpen = nil

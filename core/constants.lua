@@ -1,8 +1,13 @@
 local Transmog = _G.ChromieTransmog
 
--- 1 = print addon messages to chat (Chat / twfdebug / twferror). 0 = silent.
+-- 1 = print addon messages to chat (Chat). Toggle in Settings or /ct debug on|off.
+-- Verbose (twfdebug / gossip dumps) is a nested Settings checkbox.
 Transmog.CHAT_PRINTS = 0
-Transmog.debug = (Transmog.CHAT_PRINTS == 1)
+Transmog.debug = false
+Transmog.CHAT_VERBOSE = 0
+Transmog.debugVerbose = false
+Transmog.CHAT_TO_WINDOW = 0
+Transmog.debugToWindow = false
 
 local _, race = UnitRace('player')
 local _, class = UnitClass('player')

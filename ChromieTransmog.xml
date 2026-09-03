@@ -528,7 +528,7 @@
                 <Anchors>
                     <Anchor point="TOPLEFT">
                         <Offset>
-                            <AbsDimension x="0" y="-75"/>
+                            <AbsDimension x="5" y="-75"/>
                         </Offset>
                     </Anchor>
                 </Anchors>
@@ -561,9 +561,9 @@
                     </OnClick>
                 </Scripts>
             </Button>
-            <Button name="$parentManageSets" inherits="UIPanelButtonTemplate2" text="Manage Sets" topLevel="true">
+            <Button name="$parentManageSets" inherits="UIPanelButtonTemplate2" text="Settings" topLevel="true">
                 <Size>
-                    <AbsDimension x="90" y="24"/>
+                    <AbsDimension x="80" y="24"/>
                 </Size>
                 <Anchors>
                     <Anchor point="LEFT" relativeTo="$parentOutfits" relativePoint="RIGHT">
@@ -574,7 +574,7 @@
                 </Anchors>
                 <Scripts>
                     <OnClick>
-                        Transmog_switchTab('sets')
+                        Transmog_switchTab('settings')
                     </OnClick>
                 </Scripts>
             </Button>

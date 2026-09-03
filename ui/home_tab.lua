@@ -40,7 +40,7 @@ function Transmog:ChromieHomeTabEnsure()
         local modelTop = self.HOME_MODEL_TOP or 34
         card:SetWidth(cardW)
         card:SetHeight(modelTop + modelH + 26)
-        card:SetPoint("TOPLEFT", title, "BOTTOMLEFT", (index - 1) * (cardW + gap), -10)
+        card:SetPoint("TOPLEFT", title, "BOTTOMLEFT", (index - 1) * (cardW + gap) - 10, -6)
 
         local model = getglobal(cardName .. "ItemModel")
         model:ClearAllPoints()
@@ -50,7 +50,7 @@ function Transmog:ChromieHomeTabEnsure()
         card.model = model
 
         local nameFS = card:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        nameFS:SetPoint("BOTTOM", model, "TOP", 0, 2)
+        nameFS:SetPoint("BOTTOM", model, "TOP", (128 / 2 - 20) - (modelW / 2), 2)
         nameFS:SetWidth(cardW)
         nameFS:SetJustifyH("CENTER")
         if nameFS.SetJustifyV then
@@ -68,7 +68,8 @@ function Transmog:ChromieHomeTabEnsure()
         local apply = CreateFrame("Button", "ChromieTransmogHomeApply" .. index, card, "UIPanelButtonTemplate")
         apply:SetWidth(cardW - 30)
         apply:SetHeight(22)
-        apply:SetPoint("TOP", model, "BOTTOM", 0, -10)
+        -- Preview art is 128px, anchored -20 from the 80px model (20 left / 28 right).
+        apply:SetPoint("TOP", model, "BOTTOM", (128 / 2 - 20) - (modelW / 2), -10)
         apply:SetText("Apply Set")
         apply:SetScript("OnClick", function()
             if card.setName then
@@ -165,7 +166,7 @@ function Transmog:ChromieHomeTabPlaceCard(card, index)
     local cardW = self.HOME_CARD_W or 108
     local gap = self.HOME_CARD_GAP or 8
     card:ClearAllPoints()
-    card:SetPoint("TOPLEFT", f.title, "BOTTOMLEFT", (index - 1) * (cardW + gap), -10)
+    card:SetPoint("TOPLEFT", f.title, "BOTTOMLEFT", (index - 1) * (cardW + gap) - 10, -10)
 end
 
 function Transmog:ChromieHomeTabInvalidate(name)
@@ -231,8 +232,24 @@ function Transmog:ChromieHomeTabQueueDress()
     if not f then
         return
     end
+    -- SetUnit+Undress now so Show() does not paint current gear for a frame.
+    local i = 1
+    while f.cards and f.cards[i] do
+        local card = f.cards[i]
+        if card.model and card.setName and card.dressedName ~= card.setName then
+            card.model:SetUnit("player")
+            card.model:SetRotation(0.61)
+            card.model:Undress()
+            local cached = card.setName and self.ChromieSetIsCached and self:ChromieSetIsCached(card.setName)
+            card.dressedCached = cached
+            if not cached then
+                card.dressedName = card.setName
+            end
+        end
+        i = i + 1
+    end
     f.homeDressI = 1
-    f.homeDressPhase = 0
+    f.homeDressPhase = 1
     f.homeSlotI = 1
     f:SetScript("OnUpdate", function()
         Transmog:ChromieHomeTabDressOnUpdate()
@@ -249,7 +266,7 @@ function Transmog:ChromieHomeTabNextCard()
         return
     end
     f.homeDressI = (f.homeDressI or 1) + 1
-    f.homeDressPhase = 0
+    f.homeDressPhase = 1
     f.homeSlotI = 1
 end
 

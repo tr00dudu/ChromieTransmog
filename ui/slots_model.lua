@@ -702,6 +702,9 @@ function Transmog:hideItems(hideButton)
 			getglobal('TransmogLook' .. index):Hide()
 		end
     end
+    if hideButton and self.ChromieLookPreviewButtonHide then
+        self:ChromieLookPreviewButtonHide()
+    end
 end
 
 -- Resets all item button border textures to the normal state.
@@ -753,6 +756,9 @@ function selectTransmogSlot(InventorySlotId, slotName)
         end
         if Transmog.ChromieAboutTabHide then
             Transmog:ChromieAboutTabHide()
+        end
+        if Transmog.ChromieSettingsTabHide then
+            Transmog:ChromieSettingsTabHide()
         end
     end
 
@@ -875,7 +881,7 @@ function Transmog_resetAllSlots()
     Transmog_revert()
 end
 
--- Switches between Home, Sets, Cache, About, and slot-browse (internal "items").
+-- Switches between Home, Sets, Cache, About, Settings, and slot-browse (internal "items").
 function Transmog_switchTab(to)
 
 	twfdebug("Transmog_switchTab " .. to)
@@ -914,6 +920,9 @@ function Transmog_switchTab(to)
     end
     if Transmog.ChromieAboutTabHide then
         Transmog:ChromieAboutTabHide()
+    end
+    if Transmog.ChromieSettingsTabHide then
+        Transmog:ChromieSettingsTabHide()
     end
     Transmog:hideItems(true)
     Transmog:hidePagination()
@@ -954,6 +963,10 @@ function Transmog_switchTab(to)
         end
         if Transmog.ChromieAboutTabShow then
             Transmog:ChromieAboutTabShow()
+        end
+    elseif to == 'settings' then
+        if Transmog.ChromieSettingsTabShow then
+            Transmog:ChromieSettingsTabShow()
         end
     end
 

@@ -1,8 +1,20 @@
 local Transmog = _G.ChromieTransmog
 
+local function printHelp()
+    Transmog:ChatAlways("Commands:")
+    Transmog:ChatAlways("/ct on — ChromieTransmog overlay")
+    Transmog:ChatAlways("/ct off — original NPC window")
+    Transmog:ChatAlways("/ct debug on|off — chat debug")
+end
+
 local function runCmd(cmd)
     cmd = string.lower(string.gsub(cmd or "", "^%s+", ""))
     cmd = string.gsub(cmd, "%s+$", "")
+    cmd = string.gsub(cmd, "%s+", " ")
+    if cmd == "" then
+        printHelp()
+        return
+    end
     if cmd == "on" then
         Transmog:SetOverlayEnabled(true)
         return
@@ -11,15 +23,16 @@ local function runCmd(cmd)
         Transmog:SetOverlayEnabled(false)
         return
     end
-    if cmd == "" then
-        if Transmog.overlayEnabled then
-            Transmog:Chat("Overlay ON. /ct off = original NPC window.")
-        else
-            Transmog:Chat("Overlay OFF. /ct on = ChromieTransmog UI.")
-        end
+    if cmd == "debug on" then
+        Transmog:SetDebugEnabled(true)
         return
     end
-    Transmog:Chat("Unknown command. Use /ct on or /ct off.")
+    if cmd == "debug off" then
+        Transmog:SetDebugEnabled(false)
+        return
+    end
+    Transmog:ChatAlways("Unknown command.")
+    printHelp()
 end
 
 SLASH_CHROMIETRANSMOG1 = "/chromietransmog"

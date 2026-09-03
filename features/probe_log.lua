@@ -4,7 +4,10 @@ local MAX_LOG = 50000
 local PROBE_TIMEOUT = 1.5
 
 function Transmog:ChromieLogActive()
-    return self.logDevEnabled and (self.logEnabled or self.probeActive)
+    if self.CHAT_TO_WINDOW == 1 then
+        return true
+    end
+    return self.probeActive or self.logEnabled
 end
 
 function Transmog:ChromieLogShow()
@@ -40,7 +43,7 @@ function Transmog:ChromieLogCreate()
 
     local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     title:SetPoint("TOP", 0, -14)
-    title:SetText("ChromieTransmog probe log")
+    title:SetText("ChromieTransmog log")
 
     local hint = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     hint:SetPoint("TOP", title, "BOTTOM", 0, -4)
@@ -121,9 +124,6 @@ function Transmog:ChromieLogClear()
 end
 
 function Transmog:ChromieLog(line, force)
-    if not self.logDevEnabled then
-        return
-    end
     if not force and not self:ChromieLogActive() then
         return
     end
@@ -145,7 +145,6 @@ function Transmog:ChromieLog(line, force)
         end
         scroll:SetVerticalScroll(max)
     end
-    twfdebug(row)
 end
 
 function Transmog:ChromieSafe(fn, fallback)
@@ -160,7 +159,7 @@ function Transmog:ChromieLogSnapshot(reason)
     if self.chromieJob == "cache-sync" and not self.probeActive then
         return
     end
-    if not self:ChromieLogActive() then
+    if not self.probeActive and not self.logEnabled then
         return
     end
     self:ChromieLog("--- " .. tostring(reason) .. " ---")

@@ -403,4 +403,7 @@ function Transmog:renderAvailableTransmogs(slot, itemClass)
     if self.ChromieLookPreviewRefreshPanel then
         self:ChromieLookPreviewRefreshPanel()
     end
+    if self.ChromieLookPreviewButtonShow then
+        self:ChromieLookPreviewButtonShow()
+    end
 end

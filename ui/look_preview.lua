@@ -175,20 +175,22 @@ local function makeStepper(parent, label, axis, yOff)
 end
 
 local function attachOpenButton(f)
-    if f.openBtn or not ChromieTransmogFrameCloseButton then
+    if f.openBtn then
         return
     end
     local cam = CreateFrame("Button", "ChromieTransmogLookCameraButton", ChromieTransmogFrame, "UIPanelButtonTemplate")
-    cam:SetWidth(64)
+    cam:SetWidth(48)
     cam:SetHeight(20)
-    cam:SetPoint("RIGHT", ChromieTransmogFrameCloseButton, "LEFT", -4, 0)
-    cam:SetText("Camera")
+    cam:SetPoint("BOTTOMRIGHT", ChromieTransmogFrame, "BOTTOMRIGHT", -30, 12)
+    cam:SetFrameLevel((ChromieTransmogFrame:GetFrameLevel() or 1) + 6)
+    cam:SetText("Adjust")
     cam:SetScript("OnClick", function()
         Transmog:ChromieLookPreviewToggle()
     end)
     if AddButtonOnEnterTextTooltip then
-        AddButtonOnEnterTextTooltip(cam, "Look camera", "Tweak 3D look zoom if your resolution crops helm/boots.")
+        AddButtonOnEnterTextTooltip(cam, "Adjust camera", "Tweak 3D look zoom if your resolution crops helm/boots.")
     end
+    cam:Hide()
     f.openBtn = cam
 end
 
@@ -225,7 +227,7 @@ function Transmog:ChromieLookPreviewEnsure()
 
     local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     title:SetPoint("TOP", 0, -14)
-    title:SetText("Look camera")
+    title:SetText("Adjust camera")
 
     local hint = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     hint:SetPoint("TOPLEFT", 16, -32)
@@ -286,6 +288,19 @@ function Transmog:ChromieLookPreviewRefreshPanel()
     end
     if f.rowY and f.rowY.value then
         f.rowY.value:SetText(fmt1(p.y))
+    end
+end
+
+function Transmog:ChromieLookPreviewButtonShow()
+    local f = self:ChromieLookPreviewEnsure()
+    if f.openBtn then
+        f.openBtn:Show()
+    end
+end
+
+function Transmog:ChromieLookPreviewButtonHide()
+    if self.lookPreviewFrame and self.lookPreviewFrame.openBtn then
+        self.lookPreviewFrame.openBtn:Hide()
     end
 end
 

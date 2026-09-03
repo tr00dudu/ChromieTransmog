@@ -11,13 +11,6 @@ local VENDOR_SKIP = {
     [57576] = true,
 }
 
-function Transmog:Chat(msg)
-    if self.CHAT_PRINTS ~= 1 then
-        return
-    end
-    DEFAULT_CHAT_FRAME:AddMessage("|cff69ccf0[ChromieTransmog]|r " .. tostring(msg))
-end
-
 function Transmog:ChromieInitStatus()
     local _, slotId
     for _, slotId in pairs(self.inventorySlots) do
@@ -39,6 +32,9 @@ function Transmog:ChromieKeepGossipAlive()
     -- After each applied slot the player must right-click Warpweaver again.
     -- Blocking CloseGossip here leaves the client "in gossip" so that click does nothing.
     if self.chromieWaitingForNpc then
+        return false
+    end
+    if self.chromieNativeGossip then
         return false
     end
     if not self.overlayEnabled or self.probeActive then
@@ -614,6 +610,9 @@ function Transmog:ChromieShouldIntercept()
     if self.probeActive then
         return true
     end
+    if self.chromieNativeGossip then
+        return false
+    end
     if not self.overlayEnabled then
         return false
     end
@@ -634,7 +633,7 @@ function Transmog:SetOverlayEnabled(enabled)
     enabled = not not enabled
     self.overlayEnabled = enabled
     if enabled then
-        self:Chat("Overlay on. Talk to the transmog NPC to use ChromieTransmog.")
+        self:ChatAlways("Overlay on. Talk to the transmog NPC to use ChromieTransmog.")
         return
     end
 
@@ -673,7 +672,41 @@ function Transmog:SetOverlayEnabled(enabled)
             MerchantFrame:Show()
         end
     end
-    self:Chat("Overlay off. Original NPC window will be used. /ct on to restore.")
+    self:ChatAlways("Overlay off. Original NPC window will be used. /ct on to restore.")
+end
+
+-- This conversation only: hide overlay, show Blizzard gossip. Next NPC talk uses overlay again.
+function Transmog:ChromieShowNativeGossip()
+    if not ChromieTransmogFrame or not ChromieTransmogFrame:IsShown() then
+        return
+    end
+    self.chromieNativeGossip = true
+    if self.ChromieSetCacheAbort then
+        self:ChromieSetCacheAbort()
+    end
+    if self.ChromieAbortMultiApply then
+        self:ChromieAbortMultiApply()
+    end
+    self.chromieJob = nil
+    self.chromieApplyClicked = nil
+    self.chromieGossipConfirmed = nil
+    self.chromieWaitingForNpc = nil
+    if self.ChromieHideSetCreate then
+        self:ChromieHideSetCreate()
+    end
+    self.skipCloseOnHide = true
+    ChromieTransmogFrame:Hide()
+    self.skipCloseOnHide = nil
+    self:ChromieRestoreFrame(GossipFrame)
+    self:ChromieRestoreFrame(MerchantFrame)
+    if GossipFrame then
+        ShowUIPanel(GossipFrame)
+        GossipFrame:Show()
+    end
+    if self.chromieVendorOpen and MerchantFrame then
+        ShowUIPanel(MerchantFrame)
+        MerchantFrame:Show()
+    end
 end
 
 function Transmog:ChromieAddCached(slot, itemId, iconPath)
@@ -1470,7 +1503,20 @@ function Transmog:ChromieStoreSetItems(name, items)
     if not self.chromieSetItems then
         self.chromieSetItems = {}
     end
+    -- Apply-confirm gossip often has no item rows. Do not wipe a set-view scrape.
+    local prev = self.chromieSetItems[name]
+    if (not items or not next(items)) and prev and next(prev) then
+        if self.ChromieSetCacheDbg then
+            self:ChromieSetCacheDbg("store set \"" .. tostring(name) .. "\" skip empty scrape, keep "
+                .. (self.ChromieSetCacheFmtMap and self:ChromieSetCacheFmtMap(prev) or "previous"))
+        end
+        return
+    end
     self.chromieSetItems[name] = items
+    if self.ChromieSetCacheDbg then
+        self:ChromieSetCacheDbg("store set \"" .. tostring(name) .. "\" scrape="
+            .. (self.ChromieSetCacheFmtMap and self:ChromieSetCacheFmtMap(items) or tostring(items)))
+    end
     if self.chromiePendingSet and self.chromiePendingSet.name == name then
         self.chromiePendingSet.items = items
     end
@@ -1730,6 +1776,11 @@ function Transmog:ChromieHandleSetsUseGossip()
         self:ChromieSetCacheDbg("HandleSetsUse kind=" .. tostring(kind) .. " name=\"" .. tostring(name) .. "\""
             .. " applied=" .. tostring(self.chromieSetUseApplied) .. " returning=" .. tostring(self.chromieSetViewPhase))
     end
+    -- Scrape while the set-view item rows are on screen. Confirm sets applied=true
+    -- before the next GOSSIP_SHOW, which used to Back out without storing.
+    if kind == "set-view" then
+        self:ChromieStoreSetItems(name, self:ChromieParseSetItems(self.chromieLastOptions))
+    end
 
     -- Use this set does not close gossip and stays on the set view.
     -- First page is two Back... clicks away: view -> list -> main.
@@ -1797,7 +1848,6 @@ function Transmog:ChromieHandleSetsUseGossip()
             if self.ChromieSetCacheDbg then
                 self:ChromieSetCacheDbg("set-view apply confirmed name=\"" .. tostring(name) .. "\"")
             end
-            self:ChromieStoreSetItems(name, self:ChromieParseSetItems(self.chromieLastOptions))
             self:ChromieClickBack("sets-use-applied")
             self:ChromieKickSetReturn()
             return
@@ -1988,6 +2038,15 @@ function Transmog:ChromieFinishSetSave()
     self:calculateCost()
 end
 
+function Transmog:ChromieSetPriceCanClick()
+    if (self.chromieSetPriceTries or 0) >= 10 then
+        self:ChromieFinishSetJob()
+        return false
+    end
+    self.chromieSetPriceTries = (self.chromieSetPriceTries or 0) + 1
+    return true
+end
+
 function Transmog:ChromieHandleSetsPriceGossip()
     if not self:ChromieGossipReady() then
         return
@@ -2000,6 +2059,9 @@ function Transmog:ChromieHandleSetsPriceGossip()
         end
         local idx = self:ChromieFindFlagIndex(self.chromieLastOptions, "manageSets")
         if idx then
+            if not self:ChromieSetPriceCanClick() then
+                return
+            end
             SelectGossipOption(idx)
             return
         end
@@ -2017,6 +2079,9 @@ function Transmog:ChromieHandleSetsPriceGossip()
         end
         local idx = self:ChromieFindFlagIndex(self.chromieLastOptions, "saveSet")
         if idx then
+            if not self:ChromieSetPriceCanClick() then
+                return
+            end
             SelectGossipOption(idx)
             return
         end
@@ -2039,6 +2104,9 @@ function Transmog:ChromieHandleSetsPriceGossip()
             self:ChromieClickBack("sets-price-empty")
             return
         end
+        if not self:ChromieSetPriceCanClick() then
+            return
+        end
         self.chromieSetPriceClicked = true
         SelectGossipOption(idx)
         return
@@ -2048,6 +2116,9 @@ function Transmog:ChromieHandleSetsPriceGossip()
             return
         end
         self:ChromieFinishSetJob()
+        return
+    end
+    if not self:ChromieSetPriceCanClick() then
         return
     end
     if self:ChromieClickBack("sets-price-wrong") then
@@ -2088,6 +2159,7 @@ function Transmog:ChromieStartSetPrice()
     self.chromieSetViewPhase = nil
     self.chromieSetPriceCaptured = nil
     self.chromieSetPriceClicked = nil
+    self.chromieSetPriceTries = 0
     self.chromieSetSaveCopper = nil
     self.chromieApplyClicked = nil
     self.chromieGossipConfirmed = nil
@@ -2368,6 +2440,7 @@ function Transmog:ChromieOnMerchantShow()
 end
 
 function Transmog:ChromieOnGossipClosed()
+    self.chromieNativeGossip = nil
     if self.ChromieLogSnapshot then
         self:ChromieLog("EVENT GOSSIP_CLOSED")
         self:ChromieLogSnapshot("GOSSIP_CLOSED")

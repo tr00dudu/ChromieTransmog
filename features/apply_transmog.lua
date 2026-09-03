@@ -143,6 +143,9 @@ function Transmog:ChromiePromptCoverRight()
     if self.ChromieAboutTabHide then
         self:ChromieAboutTabHide()
     end
+    if self.ChromieSettingsTabHide then
+        self:ChromieSettingsTabHide()
+    end
     if self.hideItems then
         self:hideItems(true)
     end

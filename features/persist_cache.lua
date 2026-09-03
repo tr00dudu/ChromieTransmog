@@ -353,15 +353,48 @@ function Transmog:ChromieSetItemsForName(name)
         return nil
     end
     local items = {}
+    local used = {}
     local k, v
     for k, v in pairs(src) do
         local slot = tonumber(k)
         local id = tonumber(v)
+        if not slot and id and id > 1 and self.ChromieGuessSlotForItem then
+            slot = self:ChromieGuessSlotForItem(id, used)
+        end
         if slot then
             items[slot] = id or 0
+            used[slot] = true
         end
     end
     return items
+end
+
+function Transmog:ChromieSetDefinedSlots(name)
+    -- Gossip scrape only. Persist inferred maps are last-cache snapshots and
+    -- can include slots that were mogged but not part of the set.
+    local src = name and self.chromieSetItems and self.chromieSetItems[name]
+    if not src then
+        return nil
+    end
+    local defined, n = {}, 0
+    local used = {}
+    local k, v
+    for k, v in pairs(src) do
+        local slot = tonumber(k)
+        local id = tonumber(v)
+        if not slot and id and id > 1 and self.ChromieGuessSlotForItem then
+            slot = self:ChromieGuessSlotForItem(id, used)
+        end
+        if slot then
+            defined[slot] = true
+            used[slot] = true
+            n = n + 1
+        end
+    end
+    if n == 0 then
+        return nil
+    end
+    return defined
 end
 
 function Transmog:ChromiePersistDropOwnedForItem(itemId)
