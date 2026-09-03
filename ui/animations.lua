@@ -268,7 +268,7 @@ Transmog.gearChangedDelay:SetScript("OnUpdate", function()
 
         selectTransmogSlot(-1)
         Transmog_revert()
-        if Transmog.ChromieOwnedOnGearChanged then
+        if Transmog.ChromieOwnedOnGearChanged and Transmog.chromieHasBeenOpened then
             Transmog:ChromieOwnedOnGearChanged()
         end
         Transmog.gearChangedDelay:Hide()

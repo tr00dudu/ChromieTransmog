@@ -49,10 +49,6 @@ local function originalItemTexture(unit, slot)
     if not itemLink then
         return nil
     end
-    local itemId = Transmog:IDFromLink(itemLink)
-    if itemId and Transmog.cacheItem then
-        Transmog:cacheItem(itemId)
-    end
     local _, _, _, _, _, _, _, _, _, tex = GetItemInfo(itemLink)
     return tex
 end
@@ -61,16 +57,15 @@ function Transmog:ChromieRestoreSlotIcon(button, unit)
     if not button or not unit then
         return
     end
+    if unit == "player" and CharacterFrame and not CharacterFrame:IsShown() then
+        return
+    end
     local slot = button:GetID()
     if not slot or slot < 1 then
         return
     end
     local tex = originalItemTexture(unit, slot)
     if not tex then
-        local itemId = Transmog:IDFromLink(GetInventoryItemLink(unit, slot))
-        if itemId and Transmog.cacheItem then
-            Transmog:cacheItem(itemId)
-        end
         return
     end
     if SetItemButtonTexture then
@@ -89,6 +84,10 @@ end
 
 function Transmog:ChromieRefreshPaperdollIcons(unit)
     unit = unit or "player"
+    if unit == "player" and CharacterFrame and not CharacterFrame:IsShown()
+        and (not ChromieTransmogFrame or not ChromieTransmogFrame:IsShown()) then
+        return
+    end
     local map = (unit == "player") and PLAYER_SLOT_BUTTON or INSPECT_SLOT_BUTTON
     local i = 1
     while PAPERDOLL_SLOTS[i] do
@@ -99,9 +98,6 @@ function Transmog:ChromieRefreshPaperdollIcons(unit)
             if button then
                 local link = GetInventoryItemLink(unit, slot)
                 if link then
-                    if self.cacheItem then
-                        self:cacheItem(link)
-                    end
                     self:ChromieRestoreSlotIcon(button, unit)
                 end
             end
@@ -191,9 +187,6 @@ function Transmog:ChromieMogItemName(slot, unit)
     if not mogId or mogId <= 1 then
         return nil
     end
-    if self.cacheItem then
-        self:cacheItem(mogId)
-    end
     return GetItemInfo(mogId)
 end
 
@@ -281,9 +274,6 @@ function Transmog:ChromieAppearanceLabelForLink(link)
         return LABEL_HIDDEN
     end
     if owned and owned > 1 then
-        if self.cacheItem then
-            self:cacheItem(owned)
-        end
         local name = GetItemInfo(owned)
         if name then
             return TRANSMOG_PINK .. "Transmogrified: " .. name .. "|r"
@@ -515,7 +505,10 @@ loader:SetScript("OnEvent", function()
         hookInspect()
     elseif event == "UNIT_INVENTORY_CHANGED" then
         if arg1 == "player" then
-            Transmog:ChromieRefreshPaperdollIcons("player")
+            if (CharacterFrame and CharacterFrame:IsShown()) or
+               (ChromieTransmogFrame and ChromieTransmogFrame:IsShown()) then
+                Transmog:ChromieRefreshPaperdollIcons("player")
+            end
         elseif InspectFrame and InspectFrame:IsShown() and arg1 == inspectUnit() then
             Transmog:ChromieRefreshPaperdollIcons(arg1)
         end

@@ -1,7 +1,7 @@
 <Ui xmlns="http://www.blizzard.com/wow/ui/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.blizzard.com/wow/ui/..\FrameXML\UI.xsd">
     
     <GameTooltip name="FashionTooltip" inherits="GameTooltipTemplate" parent="UIParent" hidden="true"/>
-    <Frame name="ChromieTransmogFrameLookTemplate" virtual="true" framestrata="HIGH">
+    <Frame name="ChromieTransmogFrameLookTemplate" virtual="true">
         <Size>
             <AbsDimension x="90" y="110"/>
         </Size>

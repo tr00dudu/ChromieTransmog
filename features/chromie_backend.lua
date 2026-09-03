@@ -2483,6 +2483,7 @@ function Transmog:ChromieOnGossipClosed()
 end
 
 function Transmog:ChromieOpenUI()
+    self.chromieHasBeenOpened = true
     self:ChromieInitStatus()
     if self.ChromieHydrateFromApplied then
         self:ChromieHydrateFromApplied()
@@ -2542,6 +2543,11 @@ function Transmog:ChromieEnsureSlot(slot, forceScan)
     end
     if not self:ChromieSlotSupportsTransmog(slot) then
         return
+    end
+    -- First click on a slot this overlay visit always scrapes gossip (new unlocks).
+    -- Later clicks on that slot reuse persist. Cleared on frame hide.
+    if not forceScan and not (self.chromieSessionScanned and self.chromieSessionScanned[slot]) then
+        forceScan = true
     end
     if not forceScan and self.ChromiePublishFromPersist and self:ChromiePublishFromPersist(slot) then
         self:ChromiePublish(slot)

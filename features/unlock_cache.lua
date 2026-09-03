@@ -472,7 +472,11 @@ function Transmog:ChromieMarkSessionScanned(slot, key)
     if not self.chromieSessionScanned then
         self.chromieSessionScanned = {}
     end
-    -- Track by cache key only so swapping item type can rescan the new key.
+    -- Track by slot so the first click this visit always scrapes.
+    -- Cache key still recorded so weapon-type swaps can scan again.
+    if slot then
+        self.chromieSessionScanned[slot] = true
+    end
     if key then
         self.chromieSessionScanned[key] = true
     end

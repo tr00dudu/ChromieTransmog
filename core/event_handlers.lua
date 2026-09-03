@@ -80,6 +80,11 @@ Transmog:SetScript("OnEvent", function()
                 return
             end
 
+            -- Overlay-only: sync slot state after equips. Never run while closed.
+            if not ChromieTransmogFrame or not ChromieTransmogFrame:IsVisible() then
+                return
+            end
+
             if Transmog:EquippedItemsChanged() then
 
                 twfdebug("equipped items changed")
