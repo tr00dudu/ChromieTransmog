@@ -14,7 +14,7 @@ function Transmog:ChromieCacheTabEnsure()
 
     local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     title:SetPoint("TOPLEFT", 8, -4)
-    title:SetText("Cache")
+    title:SetText("Character cache")
     f.title = title
 
     local intro = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -49,6 +49,22 @@ function Transmog:ChromieCacheTabEnsure()
     report:SetJustifyV("TOP")
     report:SetNonSpaceWrap(true)
     f.reportText = report
+
+    local accountTitle = child:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    accountTitle:SetPoint("TOPLEFT", report, "BOTTOMLEFT", 0, -18)
+    accountTitle:SetJustifyH("LEFT")
+    accountTitle:SetText("Account collection")
+    accountTitle:Hide()
+    f.accountTitle = accountTitle
+
+    local accountReport = child:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    accountReport:SetPoint("TOPLEFT", accountTitle, "BOTTOMLEFT", 0, -6)
+    accountReport:SetWidth(370)
+    accountReport:SetJustifyH("LEFT")
+    accountReport:SetJustifyV("TOP")
+    accountReport:SetNonSpaceWrap(true)
+    accountReport:Hide()
+    f.accountReport = accountReport
 
     local drop = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
     drop:SetWidth(100)
@@ -89,6 +105,17 @@ function Transmog:ChromieCacheTabEnsure()
     end)
     scanAll:SetFrameLevel(f:GetFrameLevel() + 4)
     f.scanAll = scanAll
+
+    local dropCol = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+    dropCol:SetWidth(120)
+    dropCol:SetHeight(22)
+    dropCol:SetPoint("BOTTOMRIGHT", -25, 8)
+    dropCol:SetText("Drop collection")
+    dropCol:SetScript("OnClick", function()
+        StaticPopup_Show("CHROMIE_TRANSMOG_DROP_COLLECTION")
+    end)
+    dropCol:SetFrameLevel(f:GetFrameLevel() + 4)
+    f.dropCollection = dropCol
 
     self.cacheTabFrame = f
     return f
@@ -222,6 +249,13 @@ function Transmog:ChromieCacheTabRefresh(force)
     if not char then
         f.summary:SetText("No character data.")
         f.reportText:SetText("")
+        if f.accountTitle then
+            f.accountTitle:Hide()
+        end
+        if f.accountReport then
+            f.accountReport:SetText("")
+            f.accountReport:Hide()
+        end
         self:ChromieCacheTabSetIntroVisible(true)
         return
     end
@@ -235,12 +269,16 @@ function Transmog:ChromieCacheTabRefresh(force)
     local i = 1
     while self.CACHE_TAB_SLOTS[i] do
         local slot = self.CACHE_TAB_SLOTS[i]
-        local label, status = self:ChromieCacheSlotStatus(slot)
+        local label, status, n = self:ChromieCacheSlotStatus(slot)
+        local shown = label
+        if n and n > 0 then
+            shown = label .. " (" .. n .. ")"
+        end
         if self:ChromieCacheSlotIsReportIssue(slot) then
-            table.insert(needLabels, label)
+            table.insert(needLabels, shown)
             issueCount = issueCount + 1
         elseif status == "ok" then
-            table.insert(okLabels, label)
+            table.insert(okLabels, shown)
             okCount = okCount + 1
         end
         i = i + 1
@@ -255,20 +293,21 @@ function Transmog:ChromieCacheTabRefresh(force)
         table.insert(lines, "|cffaaaaaaUnmog the slot and press Scan all, or scan twice with two differently transmogged items in that slot (this tab auto-scans on item equip).|r")
     end
 
-    local setLines = {}
+    local setOk = {}
+    local setNeed = {}
     local setsUncached = 0
     if char.sets and char.sets.items then
         local name, items
         for name, items in pairs(char.sets.items) do
             if char.sets.inferred and char.sets.inferred[name] then
-                table.insert(setLines, "|cff00ff00Set \"" .. tostring(name) .. "\": cached|r")
+                table.insert(setOk, "Set \"" .. tostring(name) .. "\"")
             end
         end
     end
     if char.sets and char.sets.unknown then
         local u = 1
         while char.sets.unknown[u] do
-            table.insert(setLines, "Set \"" .. char.sets.unknown[u] .. "\": not cached")
+            table.insert(setNeed, "Set \"" .. char.sets.unknown[u] .. "\"")
             issueCount = issueCount + 1
             setsUncached = setsUncached + 1
             u = u + 1
@@ -287,23 +326,51 @@ function Transmog:ChromieCacheTabRefresh(force)
             end
         end
         if not found then
-            table.insert(setLines, "Set \"" .. tostring(self.lastAppliedSetName) .. "\": not cached")
+            table.insert(setNeed, "Set \"" .. tostring(self.lastAppliedSetName) .. "\"")
             issueCount = issueCount + 1
             setsUncached = setsUncached + 1
         end
     end
-    if setLines[1] then
+    if setOk[1] or setNeed[1] then
         if lines[1] then
             table.insert(lines, "")
         end
-        local s = 1
-        while setLines[s] do
-            table.insert(lines, setLines[s])
-            s = s + 1
+        if setOk[1] then
+            table.insert(lines, "|cff00ff00" .. table.concat(setOk, ", ") .. ": cached|r")
+        end
+        if setNeed[1] then
+            table.insert(lines, table.concat(setNeed, ", ") .. ": not cached")
         end
         if setsUncached > 0 then
             table.insert(lines, "")
             table.insert(lines, "|cffaaaaaaApply the set from this window (Quick Sets dropdown or Home tab) to cache it. Do that after the slots above are cached, or the snapshot can be wrong.|r")
+        end
+    end
+
+    local showAccount = self.ChromieAccountFlag and self:ChromieAccountFlag("showUncollectedTip")
+    if f.dropCollection then
+        if showAccount then
+            f.dropCollection:Show()
+        else
+            f.dropCollection:Hide()
+        end
+    end
+    local accountLines
+    if showAccount and self.ChromieAccountScanStatusLines then
+        local ok, result = pcall(self.ChromieAccountScanStatusLines, self)
+        if ok then
+            accountLines = result
+        end
+    end
+    if f.accountTitle and f.accountReport then
+        if accountLines then
+            f.accountTitle:Show()
+            f.accountReport:SetText(table.concat(accountLines, "\n"))
+            f.accountReport:Show()
+        else
+            f.accountTitle:Hide()
+            f.accountReport:SetText("")
+            f.accountReport:Hide()
         end
     end
 
@@ -324,6 +391,11 @@ function Transmog:ChromieCacheTabRefresh(force)
     local h = f.reportText:GetStringHeight()
     if not h or h < 1 then
         h = 20
+    end
+    if accountLines and f.accountTitle and f.accountReport then
+        local th = f.accountTitle:GetStringHeight() or 0
+        local ah = f.accountReport:GetStringHeight() or 0
+        h = h + 18 + th + 6 + ah
     end
     f.scrollChild:SetHeight(h + 8)
     f.scroll:SetVerticalScroll(0)

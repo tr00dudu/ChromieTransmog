@@ -13,8 +13,53 @@ function Transmog:ChromieSettingsTabEnsure()
     title:SetPoint("TOPLEFT", 8, -4)
     title:SetText("Settings")
 
+    local uncollected = CreateFrame("CheckButton", "ChromieTransmogSettingsUncollected", f, "OptionsCheckButtonTemplate")
+    uncollected:SetPoint("TOPLEFT", title, "BOTTOMLEFT", -2, -10)
+    local ulabel = getglobal(uncollected:GetName() .. "Text")
+    if ulabel then
+        ulabel:SetText("Show not collected in tooltips")
+    end
+    uncollected:SetScript("OnClick", function()
+        Transmog:ChromieAccountSetFlag("showUncollectedTip", this:GetChecked() and true or false)
+        Transmog:ChromieSettingsTabSync()
+    end)
+    f.uncollectedCheck = uncollected
+
+    local function makeUncollectedCheck(name, text, anchor, dx, flag)
+        local cb = CreateFrame("CheckButton", name, f, "OptionsCheckButtonTemplate")
+        cb:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", dx, 2)
+        local label = getglobal(cb:GetName() .. "Text")
+        if label then
+            label:SetText(text)
+        end
+        cb:SetScript("OnClick", function()
+            Transmog:ChromieAccountSetFlag(flag, this:GetChecked() and true or false)
+            Transmog:ChromieSettingsTabSync()
+        end)
+        return cb
+    end
+
+    f.uncollectedPoorCheck = makeUncollectedCheck("ChromieTransmogSettingsUncollectedPoor", "Include Common Items", uncollected, 16, "showUncollectedPoor")
+    f.uncollectedLowerCheck = makeUncollectedCheck("ChromieTransmogSettingsUncollectedLower", "Include lower armor proficiencies", f.uncollectedPoorCheck, 0, "showUncollectedLower")
+    f.uncollectedHigherCheck = makeUncollectedCheck("ChromieTransmogSettingsUncollectedHigher", "Include higher armor and non-proficient weapons", f.uncollectedLowerCheck, 0, "showUncollectedHigher")
+    f.uncollectedHigherBoeCheck = makeUncollectedCheck("ChromieTransmogSettingsUncollectedHigherBoe", "BoE", f.uncollectedHigherCheck, 16, "showUncollectedHigherBoe")
+    f.uncollectedHigherBopCheck = makeUncollectedCheck("ChromieTransmogSettingsUncollectedHigherBop", "BoP", f.uncollectedHigherBoeCheck, 0, "showUncollectedHigherBop")
+
+    local note = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    note:SetPoint("TOPLEFT", f.uncollectedHigherBopCheck, "BOTTOMLEFT", -32, -8)
+    note:SetWidth(360)
+    note:SetJustifyH("LEFT")
+    note:SetTextColor(0.7, 0.7, 0.7)
+    note:SetText("Until you cache appearances at a Warpweaver, the not-collected status in tooltips will be inaccurate for types you have not scanned.")
+    f.uncollectedNote = note
+
+    local debugTitle = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    debugTitle:SetPoint("TOPLEFT", note, "BOTTOMLEFT", 0, -14)
+    debugTitle:SetText("Debug")
+    f.debugTitle = debugTitle
+
     local check = CreateFrame("CheckButton", "ChromieTransmogSettingsChatDebug", f, "OptionsCheckButtonTemplate")
-    check:SetPoint("TOPLEFT", title, "BOTTOMLEFT", -2, -10)
+    check:SetPoint("TOPLEFT", debugTitle, "BOTTOMLEFT", -2, -8)
     local label = getglobal(check:GetName() .. "Text")
     if label then
         label:SetText("Print debug messages in chat")
@@ -22,6 +67,7 @@ function Transmog:ChromieSettingsTabEnsure()
     check:SetScript("OnClick", function()
         local on = this:GetChecked() and true or false
         Transmog:SetDebugEnabled(on)
+        Transmog:ChromieSettingsTabSync()
     end)
     f.debugCheck = check
 
@@ -57,6 +103,27 @@ function Transmog:ChromieSettingsTabSync()
     local f = self.settingsTabFrame
     if not f or not f.debugCheck then
         return
+    end
+    if f.uncollectedCheck and Transmog.ChromieAccountFlag then
+        local tipOn = Transmog:ChromieAccountFlag("showUncollectedTip")
+        f.uncollectedCheck:SetChecked(tipOn and 1 or nil)
+        local function syncChild(cb, enabled, flag)
+            if not cb then
+                return
+            end
+            if enabled then
+                cb:Enable()
+            else
+                cb:Disable()
+            end
+            cb:SetChecked(Transmog:ChromieAccountFlag(flag) and 1 or nil)
+        end
+        syncChild(f.uncollectedPoorCheck, tipOn, "showUncollectedPoor")
+        syncChild(f.uncollectedLowerCheck, tipOn, "showUncollectedLower")
+        syncChild(f.uncollectedHigherCheck, tipOn, "showUncollectedHigher")
+        local higherOn = tipOn and Transmog:ChromieAccountFlag("showUncollectedHigher")
+        syncChild(f.uncollectedHigherBoeCheck, higherOn, "showUncollectedHigherBoe")
+        syncChild(f.uncollectedHigherBopCheck, higherOn, "showUncollectedHigherBop")
     end
     f.debugCheck:SetChecked(self.CHAT_PRINTS == 1)
     local nestedOn = self.CHAT_PRINTS == 1

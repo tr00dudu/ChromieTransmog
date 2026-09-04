@@ -146,6 +146,41 @@ function Transmog:ChromieMergeLiveIntoPersist(key, slot, liveSet, iconById)
     self:ChromieUnlockScanMeta(key, slot)
 end
 
+-- Gossip omits the worn mog and often the equipped base item. Always add both.
+function Transmog:ChromieMergeScanOmittedIds(key, slot, inferred)
+    if not key or not slot then
+        return
+    end
+    local eqId = self:ChromieEquippedItemId(slot)
+    eqId = eqId and tonumber(eqId)
+    if eqId and eqId > 1 then
+        -- Appearance icon for eqId, not the live slot (that is the mog while transmogged).
+        if self.cacheItem then
+            self:cacheItem(eqId)
+        end
+        local tex
+        if GetItemIcon then
+            tex = GetItemIcon(eqId)
+        end
+        if not tex then
+            tex = select(10, GetItemInfo(eqId))
+        end
+        self:ChromieUnlockMergeId(key, eqId, tex)
+    end
+    local function mergeKnown(id)
+        id = id and tonumber(id)
+        if id and id > 1 then
+            local icon = self.transmogGossipIcon and self.transmogGossipIcon[slot]
+            self:ChromieUnlockMergeId(key, id, icon)
+        end
+    end
+    mergeKnown(inferred)
+    if self.ChromiePersistGetApplied then
+        mergeKnown(self:ChromiePersistGetApplied(slot))
+    end
+    mergeKnown(self.transmogStatusFromServer and self.transmogStatusFromServer[slot])
+end
+
 function Transmog:ChromieEquippedItemId(slot)
     local link = GetInventoryItemLink("player", slot)
     return link and self:IDFromLink(link)
@@ -528,7 +563,13 @@ function Transmog:ChromieFinishSlotScan(slot)
         self.chromieLastScanInferred = {}
     end
     self.chromieLastScanInferred[slot] = self:ChromieInferAppliedFromScan(slot, key, purpose)
+    self:ChromieMergeScanOmittedIds(key, slot, self.chromieLastScanInferred[slot])
     entry = self:ChromieUnlockEntry(key)
+    if self.ChromieAccountNoteScan then
+        local liveN = self:tableSize(liveSet)
+        local scanOk = entry and entry.status == "ok" and liveN > 0
+        self:ChromieAccountNoteScan(key, liveSet, liveN, scanOk)
+    end
     local total = 0
     if entry and entry.ids then
         for _ in pairs(entry.ids) do

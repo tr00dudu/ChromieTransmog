@@ -51,7 +51,8 @@ function Transmog:frameFromInvType(invType, clientSlot)
         return SecondaryHandSlot
     end
     if invType == 'INVTYPE_RANGED' or
-            invType == 'INVTYPE_RANGEDRIGHT' then
+            invType == 'INVTYPE_RANGEDRIGHT' or
+            invType == 'INVTYPE_THROWN' then
         return RangedSlot
     end
     return nil
@@ -560,9 +561,22 @@ function Transmog:PreviewUndoOrResetSlot(slot)
         self.transmogStatusToServer[slot] = have
         self.previewShown[slot] = self.previewBaseline[slot] or self:PreviewCacheIdFromServer(slot)
     else
-        self.transmogStatusToServer[slot] = 0
-        self.previewShown[slot] = self.equippedItems[slot] or 0
+        self:PreviewResetToOriginalSlot(slot)
+        return
     end
+    self:PreviewApplySlot(slot)
+end
+
+-- Original-appearance tile: always undo this slot. Does not toggle back to the current mog.
+function Transmog:PreviewResetToOriginalSlot(slot)
+    if not slot then
+        return
+    end
+    if not self.previewShown then
+        self:PreviewCacheInit()
+    end
+    self.transmogStatusToServer[slot] = 0
+    self.previewShown[slot] = self.equippedItems[slot] or 0
     self:PreviewApplySlot(slot)
 end
 
@@ -630,7 +644,7 @@ function Transmog_Try(itemId, slotName, newReset)
 
     local equippedId = Transmog:IDFromLink(GetInventoryItemLink('player', Transmog.currentTransmogSlot))
     if itemId == equippedId then
-        Transmog:PreviewUndoOrResetSlot(Transmog.currentTransmogSlot)
+        Transmog:PreviewResetToOriginalSlot(Transmog.currentTransmogSlot)
         itemId = Transmog.previewShown[Transmog.currentTransmogSlot]
         if Transmog.transmogStatusToServer[Transmog.currentTransmogSlot] == Transmog.transmogStatusFromServer[Transmog.currentTransmogSlot] then
             getglobal(Transmog.currentTransmogSlotName .. 'BorderHi'):Hide()

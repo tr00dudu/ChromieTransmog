@@ -8,10 +8,17 @@ Transmog:RegisterEvent("MERCHANT_SHOW")
 Transmog:RegisterEvent("MERCHANT_CLOSED")
 Transmog:RegisterEvent("UNIT_INVENTORY_CHANGED")
 Transmog:RegisterEvent("CVAR_UPDATE")
+Transmog:RegisterEvent("CHAT_MSG_SYSTEM")
 
 Transmog:SetScript("OnEvent", function()
 
     if event then
+        if event == "CHAT_MSG_SYSTEM" then
+            if Transmog.ChromieAccountNoteSystemMessage then
+                Transmog:ChromieAccountNoteSystemMessage(arg1)
+            end
+            return
+        end
         if event == "GOSSIP_SHOW" then
             Transmog:ChromieOnGossipShow()
             return

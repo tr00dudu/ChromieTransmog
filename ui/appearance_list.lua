@@ -100,7 +100,7 @@ function Transmog:prepareAvailableTransmogs(slot, itemClass)
     end
 
     -- Gossip omits the worn base item while mogged. Keep it next to Hide (or first
-    -- if the slot cannot hide). reset=true shows the revert overlay; click undoes.
+    -- if the slot cannot hide). reset=true shows the revert overlay; click always undoes.
     local eqId = self.equippedItems and tonumber(self.equippedItems[slot])
     local list = self.availableTransmogItems[slot][itemClass]
     if eqId and eqId > 1 and list then
