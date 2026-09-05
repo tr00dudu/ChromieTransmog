@@ -74,6 +74,18 @@
                                 </Anchor>
                             </Anchors>
                         </Texture>
+                        <Texture name="$parentFave" hidden="true" file="Interface\TargetingFrame\UI-RaidTargetingIcon_1">
+                            <Size>
+                                <AbsDimension x="16" y="16"/>
+                            </Size>
+                            <Anchors>
+                                <Anchor point="TOPLEFT">
+                                    <Offset>
+                                        <AbsDimension x="3" y="-9"/>
+                                    </Offset>
+                                </Anchor>
+                            </Anchors>
+                        </Texture>
                         <Texture name="$parentCheck" hidden="true" file="Interface\AddOns\ChromieTransmog\assets\check">
                             <Size>
                                 <AbsDimension x="16" y="16"/>
@@ -89,8 +101,15 @@
                     </Layer>
                 </Layers>
                 <Scripts>
+                    <OnLoad>
+                        this:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+                    </OnLoad>
                     <OnClick>
-                        Transmog_Try(this:GetID(), this:GetName())
+                        if (arg1 == "RightButton") then
+                            ChromieFavoriteLook_OnClick(this:GetID())
+                        else
+                            Transmog_Try(this:GetID(), this:GetName())
+                        end
                     </OnClick>
                 </Scripts>
             </Button>

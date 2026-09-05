@@ -50,6 +50,7 @@ function Transmog:ChromiePersistChar()
             version = self.CACHE_SCHEMA_VERSION,
             unlocks = {},
             owned = {},
+            favorites = {},
             sets = {
                 names = {},
                 items = {},
@@ -65,6 +66,9 @@ function Transmog:ChromiePersistChar()
     end
     if not char.owned then
         char.owned = {}
+    end
+    if not char.favorites then
+        char.favorites = {}
     end
     -- Legacy slot-keyed applied[] mixed gear sets; drop it.
     if char.applied then
@@ -96,6 +100,68 @@ function Transmog:ChromiePersistChar()
         char.sets.lastUsed = {}
     end
     return char
+end
+
+function Transmog:ChromieFavoriteSlotList(slot)
+    local char = self:ChromiePersistChar()
+    if not char or not slot then
+        return nil
+    end
+    if not char.favorites then
+        char.favorites = {}
+    end
+    local list = char.favorites[slot]
+    if not list and char.favorites[tostring(slot)] then
+        list = char.favorites[tostring(slot)]
+        char.favorites[slot] = list
+        char.favorites[tostring(slot)] = nil
+    end
+    if not list then
+        list = {}
+        char.favorites[slot] = list
+    end
+    return list
+end
+
+function Transmog:ChromieFavoriteHas(slot, itemId)
+    itemId = tonumber(itemId)
+    if not itemId or itemId <= 1 then
+        return false
+    end
+    local list = self:ChromieFavoriteSlotList(slot)
+    if not list then
+        return false
+    end
+    local i = 1
+    while list[i] do
+        if tonumber(list[i]) == itemId then
+            return true
+        end
+        i = i + 1
+    end
+    return false
+end
+
+-- Returns true if the id is now a favorite.
+function Transmog:ChromieFavoriteToggle(slot, itemId)
+    itemId = tonumber(itemId)
+    if not itemId or itemId <= 1 or itemId == self.HIDDEN_ITEM_ID then
+        return false
+    end
+    local list = self:ChromieFavoriteSlotList(slot)
+    if not list then
+        return false
+    end
+    local i = 1
+    while list[i] do
+        if tonumber(list[i]) == itemId then
+            table.remove(list, i)
+            return false
+        end
+        i = i + 1
+    end
+    table.insert(list, 1, itemId)
+    return true
 end
 
 function Transmog:ChromieIsWeaponSlot(slot)

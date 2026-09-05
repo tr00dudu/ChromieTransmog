@@ -143,7 +143,75 @@ function Transmog:prepareAvailableTransmogs(slot, itemClass)
         table.insert(list, at, eqEntry)
     end
 
+    self:ChromieFavoritePinList(list, slot)
+
     twfdebug("prepareAvailableTransmogs end")
+end
+
+function Transmog:ChromieFavoritePinList(list, slot)
+    if not list or not slot or not self.ChromieFavoriteSlotList then
+        return
+    end
+    local faves = self:ChromieFavoriteSlotList(slot)
+    if not faves or not faves[1] then
+        return
+    end
+    local insertAt = 1
+    if list[1] and list[1].id == self.HIDDEN_ITEM_ID then
+        insertAt = 2
+    end
+    if list[insertAt] and list[insertAt].reset then
+        insertAt = insertAt + 1
+    end
+    local placed = 0
+    local f = 1
+    while faves[f] do
+        local want = tonumber(faves[f])
+        f = f + 1
+        if want and want > 1 then
+            local j = 1
+            local found = nil
+            while list[j] do
+                if tonumber(list[j].id) == want and not list[j].reset
+                    and list[j].id ~= self.HIDDEN_ITEM_ID then
+                    found = table.remove(list, j)
+                    break
+                end
+                j = j + 1
+            end
+            if found then
+                table.insert(list, insertAt + placed, found)
+                placed = placed + 1
+            end
+        end
+    end
+end
+
+function Transmog:ChromieFavoriteLookClick(itemId)
+    local slot = self.currentTransmogSlot
+    local itemClass = self.currentTransmogItemClass
+    itemId = tonumber(itemId)
+    if not slot or not itemClass or not itemId or itemId <= 1 or itemId == self.HIDDEN_ITEM_ID then
+        return
+    end
+    local list = self.availableTransmogItems[slot] and self.availableTransmogItems[slot][itemClass]
+    local k = 1
+    while list and list[k] do
+        if tonumber(list[k].id) == itemId and list[k].reset then
+            return
+        end
+        k = k + 1
+    end
+    self:ChromieFavoriteToggle(slot, itemId)
+    -- Rebuild from gossip/cache order, then pin remaining faves (same as reopen).
+    self:prepareAvailableTransmogs(slot, itemClass)
+    self:renderAvailableTransmogs(slot, itemClass)
+end
+
+function ChromieFavoriteLook_OnClick(itemId)
+    if Transmog.ChromieFavoriteLookClick then
+        Transmog:ChromieFavoriteLookClick(itemId)
+    end
 end
 
 -- Renders the grid of transmog item buttons for the currently selected slot.
@@ -182,8 +250,13 @@ function Transmog:renderAvailableTransmogs(slot, itemClass)
             self.ItemButtons[itemIndex].id = item.id
 
             getglobal('TransmogLook' .. itemIndex .. 'Button'):SetID(item.id)
+            getglobal('TransmogLook' .. itemIndex .. 'Button'):RegisterForClicks("LeftButtonUp", "RightButtonUp")
             getglobal('TransmogLook' .. itemIndex .. 'ButtonRevert'):Hide()
             getglobal('TransmogLook' .. itemIndex .. 'ButtonCheck'):Hide()
+            local faveTex = getglobal('TransmogLook' .. itemIndex .. 'ButtonFave')
+            if faveTex then
+                faveTex:Hide()
+            end
 
             if item.id == self.transmogStatusToServer[slot]
                 or (item.reset and (not self.transmogStatusToServer[slot] or self.transmogStatusToServer[slot] == 0)) then
@@ -193,18 +266,30 @@ function Transmog:renderAvailableTransmogs(slot, itemClass)
             end
 
             local _, _, _, color = GetItemQualityColor(item.quality)
+            local fave = (not item.reset) and item.id ~= self.HIDDEN_ITEM_ID
+                and self.ChromieFavoriteHas and self:ChromieFavoriteHas(slot, item.id)
             if item.reset then
                 AddButtonOnEnterTextTooltip(getglobal('TransmogLook' .. itemIndex .. 'Button'), color .. item.name, "Original appearance")
-            else
+            elseif item.id == self.HIDDEN_ITEM_ID then
                 AddButtonOnEnterTextTooltip(getglobal('TransmogLook' .. itemIndex .. 'Button'), color .. item.name)
+            elseif fave then
+                AddButtonOnEnterTextTooltip(getglobal('TransmogLook' .. itemIndex .. 'Button'), color .. item.name, "Right-click to unfavorite")
+            else
+                AddButtonOnEnterTextTooltip(getglobal('TransmogLook' .. itemIndex .. 'Button'), color .. item.name, "Right-click to favorite")
             end
             if item.reset then
                 getglobal('TransmogLook' .. itemIndex .. 'ButtonRevert'):Show()
+            end
+            if fave and faveTex then
+                faveTex:Show()
             end
 
             self.ItemButtons[itemIndex]:Show()
 
             local model = getglobal('TransmogLook' .. itemIndex .. 'ItemModel')
+            if model and model.EnableMouse then
+                model:EnableMouse(false)
+            end
 
             model:SetUnit("player")
             model:SetRotation(0.61)
