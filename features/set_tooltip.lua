@@ -299,14 +299,6 @@ local function hookTip(tip)
             local self = this or tip
             Transmog:ChromieFixSetTooltip(self, self.chromieSetUnit or "player")
         end)
-        local origClear = tip:GetScript("OnTooltipCleared")
-        tip:SetScript("OnTooltipCleared", function()
-            local self = this or tip
-            self.chromieSetUnit = nil
-            if origClear then
-                origClear()
-            end
-        end)
     end
 end
 

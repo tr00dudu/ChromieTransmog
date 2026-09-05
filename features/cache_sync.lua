@@ -21,7 +21,7 @@ function Transmog:ChromieCacheSyncMaybePrompt()
         return false
     end
     local needs = false
-    local active = self:ChromieActiveUnlockKeys and self:ChromieActiveUnlockKeys() or {}
+    local active = self.ChromieActiveUnlockKeys and self:ChromieActiveUnlockKeys() or {}
     local key, entry
     for key, entry in pairs(char.unlocks or {}) do
         if active[key] and (entry.status == "needs_scan" or entry.status == "empty") then

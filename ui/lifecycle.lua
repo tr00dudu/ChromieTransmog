@@ -47,8 +47,6 @@ function Transmog_OnLoad()
         Transmog:ChromieRestorePersistSession()
     end
 
-    Transmog.newTransmogAlert:HideAnchor()
-
     Transmog.delayedLoad:Show()
 
     if Transmog.ChromieShouldHideDressupSlot and Transmog:ChromieShouldHideDressupSlot("RangedSlot") then
