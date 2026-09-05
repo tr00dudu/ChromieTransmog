@@ -50,7 +50,9 @@ Transmog:SetScript("OnEvent", function()
                 Transmog:ChromieLog("EVENT MERCHANT_CLOSED")
             end
             Transmog.chromieVendorOpen = nil
-            Transmog:ChromieCompleteApplyClick()
+            if Transmog.ChromieCompleteApplyClick then
+                Transmog:ChromieCompleteApplyClick()
+            end
             return
         end
         if event == "CVAR_UPDATE" then
