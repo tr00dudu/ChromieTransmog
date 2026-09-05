@@ -14,8 +14,6 @@ Features
 - Home tab: last 4 used sets with 3D previews and Apply Set
 - Cache tab: appearance unlock cache per equipped item; drop cache if previews look wrong
 - Optional "You haven't collected this appearance" on item tooltips (Settings; account-wide after Warpweaver scans)
-- Per-character cache (`ChromieTransmogDB`)
-- `/ct on` / `/ct off` (also `/ctm`, `/chromietransmog`) to use this UI or the original NPC window
 
 UI fixes
 --------
@@ -25,10 +23,9 @@ UI fixes
 
 Notes
 -----
-- Stay in gossip mode (`.t i off`). Vendor item list (`.t i on`) is not supported for browsing/applying. The addon will notify you of this.
 - Home set previews need each set cached once (apply the set with the window open).
 - Incomplete cache can make the dummy look wrong until you scan those slots on the Cache tab.
-- Not-collected tooltips are wrong for a slot/type until that type is scanned at a Warpweaver.
+- Not-collected tooltips will be inaccurate for a slot/type until that type is scanned at a Warpweaver.
 
 Screenshots
 --------
