@@ -42,7 +42,7 @@ Screenshots
 <br>
 
 <p align="center">
-  <img width="924" height="632" alt="image" src="https://github.com/user-attachments/assets/b41d4c9a-af68-4d2a-87d3-842d1cb1164a" />
+  <img width="933" height="641" alt="image" src="https://github.com/user-attachments/assets/45d1742c-be8d-496a-94a5-35ecca9ccace" />
   <br>
   <em>Slot appearance grid and left-side paperdoll preview</em>
 </p>
@@ -50,7 +50,17 @@ Screenshots
 <br>
 
 <p align="center">
-  <img width="403" height="330" alt="image" src="https://github.com/user-attachments/assets/b3bbc3bd-a560-48fb-8548-ec011477e695" />
+  <img width="466" height="597" alt="image" src="https://github.com/user-attachments/assets/dd3ee5b9-6d09-46d2-ab93-b9fb78a38e18" />
   <br>
-  <em>Character sheet tooltip and icon: Transmogrified appearance name and the icon shows the original item</em>
+  <em>Transmogrified appearance name, original item icon, set bonuses count/show correctly</em>
 </p>
+<br>
+
+<p align="center">
+  <img width="365" height="291" alt="image" src="https://github.com/user-attachments/assets/5ee6f9d6-4651-4498-8bd8-23ebf9f7a7bf" />
+  <br>
+  <em>The missing appearance line</em>
+</p>
+
+
+
