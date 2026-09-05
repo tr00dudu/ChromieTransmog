@@ -13,15 +13,22 @@ Features
 - Warpweaver sets: save, apply, delete (server limit 10)
 - Home tab: last 4 used sets with 3D previews and Apply Set
 - Cache tab: appearance unlock cache per equipped item; drop cache if previews look wrong
-- Character info and inspect screen equipped items show the original item icon (no more empty icons for hidden items); tooltips show Transmogrified names
+- Optional "You haven't collected this appearance" on item tooltips (Settings; account-wide after Warpweaver scans)
 - Per-character cache (`ChromieTransmogDB`)
 - `/ct on` / `/ct off` (also `/ctm`, `/chromietransmog`) to use this UI or the original NPC window
+
+UI fixes
+--------
+- Character and inspect slot icons show the original item (no empty icons for hidden transmogs)
+- Tooltips show the Transmogrified appearance name
+- Set bonuses in tooltips stay correct while transmogged (count and green/grey bonus lines; 10/25 variants mix, e.g. Heroes'/Valorous)
 
 Notes
 -----
 - Stay in gossip mode (`.t i off`). Vendor item list (`.t i on`) is not supported for browsing/applying. The addon will notify you of this.
 - Home set previews need each set cached once (apply the set with the window open).
 - Incomplete cache can make the dummy look wrong until you scan those slots on the Cache tab.
+- Not-collected tooltips are wrong for a slot/type until that type is scanned at a Warpweaver.
 
 Screenshots
 --------

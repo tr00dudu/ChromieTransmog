@@ -15,6 +15,7 @@ features\account_collected.lua
 features\chromie_backend.lua
 features\cache_sync.lua
 features\paperdoll_icons.lua
+features\set_tooltip.lua
 features\inspect_mog_probe.lua
 features\probe_log.lua
 features\apply_transmog.lua
