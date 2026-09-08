@@ -325,23 +325,6 @@ function Transmog:ChromieInferAppliedFromScan(slot, key, purpose)
         return nil
     end
 
-    if not self:ChromieSlotIsMogged(slot) then
-        local gossip = self.transmogGossipIcon and self.transmogGossipIcon[slot]
-        local persistMog = applied and (applied > 1 or applied == self.HIDDEN_ITEM_ID)
-        local ingestMog = have == self.UNKNOWN_MOG_ID or have == self.HIDDEN_ITEM_ID
-            or gossip or persistMog
-        if ingestMog then
-            -- Live icon matches original; ingest/owned still say mogged. Keep owned.
-        else
-            -- Only wipe owned when main-menu ingest reported this slot empty.
-            if have == 0 then
-                self:ChromiePersistSetApplied(slot, 0)
-            end
-            entry.status = "ok"
-            return 0
-        end
-    end
-
     -- Gossip omits the currently applied mog. OK if that id is already in cache.
     if purpose ~= "set_cache" then
         local appliedNow = self:ChromiePersistGetApplied(slot)
@@ -365,6 +348,22 @@ function Transmog:ChromieInferAppliedFromScan(slot, key, purpose)
             self.transmogStatusToServer[slot] = inferredMog
         end
         return inferredMog
+    end
+
+    if not self:ChromieSlotIsMogged(slot) then
+        local gossip = self.transmogGossipIcon and self.transmogGossipIcon[slot]
+        local persistMog = applied and (applied > 1 or applied == self.HIDDEN_ITEM_ID)
+        local ingestMog = have == self.UNKNOWN_MOG_ID or have == self.HIDDEN_ITEM_ID
+            or gossip or persistMog
+        if ingestMog then
+            -- Live icon matches original; ingest/owned still say mogged. Keep owned.
+        else
+            if have == 0 then
+                self:ChromiePersistSetApplied(slot, 0)
+            end
+            entry.status = "ok"
+            return 0
+        end
     end
 
     -- Failed set-cache inference must not poison a previously OK unlock entry.
@@ -541,6 +540,9 @@ function Transmog:ChromieFinishSlotScan(slot)
     end
     local liveSet = self:ChromieLiveIdSet(slot)
     self:ChromieMergeLiveIntoPersist(key, slot, liveSet, iconById)
+    -- Equipped id is omitted from gossip; add it before infer so a first mogged
+    -- scan is "cache is 2 ahead" (equipped + worn mog), not "cache == live".
+    self:ChromieMergeScanOmittedIds(key, slot, nil)
     if not self.chromieLastScanInferred then
         self.chromieLastScanInferred = {}
     end
