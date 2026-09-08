@@ -448,11 +448,6 @@ function Transmog:ChromieIngestMainMenuStatus(options)
                     self.applied[slot] = applied
                 elseif applied == self.HIDDEN_ITEM_ID then
                     detected = self.HIDDEN_ITEM_ID
-                else
-                    local prev = self.transmogStatusFromServer[slot]
-                    if prev and prev > self.HIDDEN_ITEM_ID then
-                        detected = prev
-                    end
                 end
             elseif kind == "empty" then
                 self.transmogGossipIcon[slot] = nil
@@ -1434,18 +1429,25 @@ function Transmog:ChromieGuessSlotForItem(itemId, used)
     if not invType then
         return nil
     end
+    -- Set-view has no 1H/2H labels. INVTYPE_WEAPON would otherwise fill 16 then
+    -- 17, so a 2H set scrape keeps the previous dual-wield OH. Only use 17 when
+    -- something is actually equipped there.
     if invType == "INVTYPE_WEAPON" then
         if not used[16] then
             return 16
         end
-        if not used[17] then
+        if not used[17] and GetInventoryItemLink("player", 17) then
             return 17
         end
-        return 16
+        return nil
     end
     local frame = self:frameFromInvType(invType)
     if frame then
-        return self.inventorySlots[frame:GetName()]
+        local slot = self.inventorySlots[frame:GetName()]
+        if slot == 17 and not GetInventoryItemLink("player", 17) then
+            return nil
+        end
+        return slot
     end
     return nil
 end
@@ -1596,14 +1598,14 @@ function Transmog:ChromieApplySetItemsLocally(name)
             slot = tonumber(slot)
             itemId = tonumber(itemId)
             if slot and itemId and (itemId > 1 or itemId == self.HIDDEN_ITEM_ID) then
-                -- Cached set maps can include slots from a previous snapshot.
-                -- Only stamp slots gossip/live still report as mogged.
-                local have = self.transmogStatusFromServer and self.transmogStatusFromServer[slot]
-                local gossip = self.transmogGossipIcon and self.transmogGossipIcon[slot]
-                local liveMog = self.ChromieSlotTextureIsMogged and self:ChromieSlotTextureIsMogged(slot)
-                local liveHidden = self.ChromieSlotTextureIsHidden and self:ChromieSlotTextureIsHidden(slot)
-                if have == self.HIDDEN_ITEM_ID or have == self.UNKNOWN_MOG_ID
-                    or (have and have > 1) or gossip or liveMog or liveHidden then
+                -- Same-icon pieces still need fromServer stamped from the set map.
+                if GetInventoryItemLink("player", slot) then
+                    if not self.transmogStatusFromServer then
+                        self.transmogStatusFromServer = {}
+                    end
+                    if not self.transmogStatusToServer then
+                        self.transmogStatusToServer = {}
+                    end
                     self.transmogStatusFromServer[slot] = itemId
                     self.transmogStatusToServer[slot] = itemId
                     if itemId > 1 and self.cacheItem then

@@ -32,6 +32,62 @@ local function normalizeName(text)
     return text
 end
 
+-- C set rows often use the mog appearance (Heroes' …) while equippedNames
+-- uses the real item (Valorous …). Substring then fails even though both
+-- are Scourgeborne Gauntlets. Strip tier tokens, then compare again.
+local TIER_PREFIX = {
+    "heroes' ",
+    "heroes ",
+    "valorous ",
+    "conqueror's ",
+    "conquerors ",
+    "triumphant ",
+    "sanctified ",
+    "heroic ",
+}
+local TIER_SUFFIX = {
+    " of conquest",
+    " of triumph",
+}
+
+-- Case-preserving strip for display. Matching lowercases after this.
+local function stripTierTokensKeepCase(text)
+    text = stripCodes(text or "")
+    text = string.gsub(text, "^%s+", "")
+    text = string.gsub(text, "%s+$", "")
+    local changed = true
+    while changed do
+        changed = false
+        local i = 1
+        while TIER_PREFIX[i] do
+            local p = TIER_PREFIX[i]
+            local plen = string.len(p)
+            if string.len(text) >= plen and string.lower(string.sub(text, 1, plen)) == p then
+                text = string.sub(text, plen + 1)
+                changed = true
+                break
+            end
+            i = i + 1
+        end
+    end
+    local i = 1
+    while TIER_SUFFIX[i] do
+        local s = TIER_SUFFIX[i]
+        local n = string.len(text)
+        local sl = string.len(s)
+        if n > sl and string.lower(string.sub(text, n - sl + 1)) == s then
+            text = string.sub(text, 1, n - sl)
+            break
+        end
+        i = i + 1
+    end
+    return text
+end
+
+local function stripTierTokens(name)
+    return string.lower(stripTierTokensKeepCase(name))
+end
+
 local function namesMatch(a, b)
     if not a or not b or a == "" or b == "" then
         return false
@@ -39,10 +95,18 @@ local function namesMatch(a, b)
     if a == b then
         return true
     end
-    if string.find(a, b, 1, true) then
+    if string.find(a, b, 1, true) or string.find(b, a, 1, true) then
         return true
     end
-    if string.find(b, a, 1, true) then
+    a = stripTierTokens(a)
+    b = stripTierTokens(b)
+    if a == "" or b == "" then
+        return false
+    end
+    if a == b then
+        return true
+    end
+    if string.find(a, b, 1, true) or string.find(b, a, 1, true) then
         return true
     end
     return false
@@ -56,6 +120,23 @@ local function leftLine(tip, i)
     return getglobal(name .. "TextLeft" .. i)
 end
 
+-- One entry per equipped slot: real item name plus mog appearance name.
+-- C lists Heroes' when Valorous is mogged to Heroes'; count each slot once.
+local function addAlias(aliases, name)
+    name = normalizeName(name)
+    if name == "" then
+        return
+    end
+    local i = 1
+    while aliases[i] do
+        if aliases[i] == name then
+            return
+        end
+        i = i + 1
+    end
+    table.insert(aliases, name)
+end
+
 local function equippedNames(unit)
     unit = unit or "player"
     local names = {}
@@ -67,9 +148,26 @@ local function equippedNames(unit)
     for _, slot in pairs(slots) do
         local link = GetInventoryItemLink(unit, slot)
         if link then
-            local name = GetItemInfo(link)
-            if name then
-                table.insert(names, normalizeName(name))
+            local aliases = {}
+            addAlias(aliases, GetItemInfo(link))
+            if unit == "player" and Transmog.ChromiePersistGetOwnedMog then
+                local mogId = Transmog:ChromiePersistGetOwnedMog(link,
+                    Transmog.ChromieOwnedIconForSlot and Transmog:ChromieOwnedIconForSlot(slot))
+                if (not mogId or mogId == 0) and Transmog.ChromiePersistFindOwnedMogForItem then
+                    mogId = Transmog:ChromiePersistFindOwnedMogForItem(Transmog:IDFromLink(link))
+                end
+                mogId = mogId and tonumber(mogId)
+                if mogId and mogId > 1 then
+                    local mogName = GetItemInfo(mogId)
+                    if not mogName and Transmog.cacheItem then
+                        Transmog:cacheItem(mogId)
+                        mogName = GetItemInfo(mogId)
+                    end
+                    addAlias(aliases, mogName)
+                end
+            end
+            if aliases[1] then
+                table.insert(names, aliases)
             end
         end
     end
@@ -122,30 +220,41 @@ local function isPieceText(text, stripped)
     return true
 end
 
-local function pieceMatches(piece, names)
-    local p = 1
-    while names[p] do
-        if namesMatch(names[p], piece) then
+local function slotMatchesPiece(aliases, piece)
+    local i = 1
+    while aliases and aliases[i] do
+        if namesMatch(aliases[i], piece) then
             return true
         end
-        p = p + 1
+        i = i + 1
+    end
+    return false
+end
+
+local function pieceMatches(piece, names)
+    local s = 1
+    while names[s] do
+        if slotMatchesPiece(names[s], piece) then
+            return true
+        end
+        s = s + 1
     end
     return false
 end
 
 local function countEquipped(pieceNorms, names)
     local count = 0
-    local e = 1
-    while names[e] do
+    local s = 1
+    while names[s] do
         local p = 1
         while pieceNorms[p] do
-            if namesMatch(names[e], pieceNorms[p]) then
+            if slotMatchesPiece(names[s], pieceNorms[p]) then
                 count = count + 1
                 break
             end
             p = p + 1
         end
-        e = e + 1
+        s = s + 1
     end
     return count
 end
@@ -196,7 +305,12 @@ local function processSetBlock(tip, headerIndex, names, maxLine)
 
     local p = 1
     while pieceFs[p] do
-        paint(pieceFs[p], pieceMatches(pieceNorms[p], names))
+        local fs = pieceFs[p]
+        local shown = stripTierTokensKeepCase(fs:GetText() or "")
+        if shown ~= "" then
+            fs:SetText(shown)
+        end
+        paint(fs, pieceMatches(pieceNorms[p], names))
         p = p + 1
     end
 

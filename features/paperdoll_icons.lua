@@ -175,14 +175,8 @@ function Transmog:ChromieMogItemName(slot, unit)
     local link = GetInventoryItemLink("player", slot)
     local mogId = link and self.ChromiePersistGetOwnedMog
         and self:ChromiePersistGetOwnedMog(link, self:ChromieOwnedIconForSlot(slot))
-    if not mogId or mogId <= 1 then
-        local from = self.transmogStatusFromServer and self.transmogStatusFromServer[slot]
-        from = from and tonumber(from)
-        if from and from > 1 then
-            mogId = from
-        elseif self.ChromieResolveAppliedMogId then
-            mogId = self:ChromieResolveAppliedMogId(slot)
-        end
+    if (not mogId or mogId <= 1) and link and self.ChromiePersistFindOwnedMogForItem then
+        mogId = self:ChromiePersistFindOwnedMogForItem(self:IDFromLink(link))
     end
     if not mogId or mogId <= 1 then
         return nil
@@ -212,35 +206,38 @@ function Transmog:ChromieAppearanceLabel(unit, slot)
         return nil
     end
 
-    -- Live textures decide if this equipped piece currently looks mogged.
-    local state = mogStateFromTextures(unit, slot)
+    local visTex = GetInventoryItemTexture(unit, slot)
+    if isHiddenTexture(visTex) then
+        self:ChromieRememberMog(link, true)
+        return LABEL_HIDDEN
+    end
+
+    local texState = mogStateFromTextures(unit, slot)
 
     if unit == "player" then
         local owned = self.ChromiePersistGetOwnedMog
             and self:ChromiePersistGetOwnedMog(link, self:ChromieOwnedIconForSlot(slot))
+        if (not owned or owned == 0) and self.ChromiePersistFindOwnedMogForItem then
+            owned = self:ChromiePersistFindOwnedMogForItem(self:IDFromLink(link))
+        end
+        if owned == self.HIDDEN_ITEM_ID then
+            self:ChromieRememberMog(link, true)
+            return LABEL_HIDDEN
+        end
+        if owned and owned > 1 then
+            self:ChromieRememberMog(link, false)
+            return self:ChromieFormatMogLabel("mogged", slot, unit)
+        end
         local gossip = self.transmogGossipIcon and self.transmogGossipIcon[slot]
-        if not state and gossip then
+        if not texState and gossip then
             local origKey = iconKey(originalItemTexture(unit, slot))
             if iconKey(gossip) ~= origKey and not isHiddenTexture(gossip) then
-                state = "mogged"
+                texState = "mogged"
             end
-        end
-        -- Owned map is per-item. Use it for names / hidden, never to override a
-        -- clean (unmogged) texture for a different piece in the same slot.
-        if state == "mogged" or state == "hidden" then
-            if owned == self.HIDDEN_ITEM_ID then
-                state = "hidden"
-            end
-        elseif owned == self.HIDDEN_ITEM_ID and isHiddenTexture(GetInventoryItemTexture(unit, slot)) then
-            state = "hidden"
         end
     end
 
-    if state == "hidden" then
-        self:ChromieRememberMog(link, true)
-        return LABEL_HIDDEN
-    end
-    if state == "mogged" then
+    if texState == "mogged" then
         self:ChromieRememberMog(link, false)
         return self:ChromieFormatMogLabel("mogged", slot, unit)
     end
@@ -266,9 +263,9 @@ function Transmog:ChromieAppearanceLabelForLink(link)
         end
     end
     local bagIcon = select(10, GetItemInfo(link))
-    local owned = self.ChromiePersistGetOwnedMog and self:ChromiePersistGetOwnedMog(link, bagIcon)
-    if not owned and self.ChromiePersistFindOwnedMogForItem then
-        owned = self:ChromiePersistFindOwnedMogForItem(itemId)
+    local owned = self.ChromiePersistFindOwnedMogForItem and self:ChromiePersistFindOwnedMogForItem(itemId)
+    if not owned and self.ChromiePersistGetOwnedMog then
+        owned = self:ChromiePersistGetOwnedMog(link, bagIcon)
     end
     if owned == self.HIDDEN_ITEM_ID then
         return LABEL_HIDDEN
@@ -371,6 +368,34 @@ function Transmog:ChromieAttachTransmogTooltip(tooltip, unit, slot)
     tooltip:Show()
 end
 
+function Transmog:ChromieAttachLinkTransmogTooltip(tooltip, link)
+    if not tooltip or not link then
+        return
+    end
+    if tooltip.GetOwner and not tooltip:GetOwner() then
+        return
+    end
+    if self:ChromieTooltipHasMogLine(tooltip) then
+        return
+    end
+    local label = self:ChromieAppearanceLabelForLink(link)
+    if not label then
+        return
+    end
+    local left2 = getglobal(tooltip:GetName() .. "TextLeft2")
+    if left2 then
+        local existing = left2:GetText() or ""
+        if existing == "" then
+            left2:SetText(label)
+        else
+            left2:SetText(label .. "\n|cffffffff" .. existing)
+        end
+    elseif tooltip.AddLine then
+        tooltip:AddLine(label)
+    end
+    tooltip:Show()
+end
+
 function Transmog:ChromieInstallTooltipHooks()
     if self.chromieTooltipHooksInstalled then
         return
@@ -406,6 +431,18 @@ function Transmog:ChromieInstallTooltipHooks()
             if button and GameTooltip and Transmog:ChromieShouldAttachTransmogTooltip(unit, slot) then
                 Transmog:ChromieAttachTransmogTooltip(GameTooltip, unit, slot)
             end
+        end)
+    end
+
+    if GameTooltip and GameTooltip.SetBagItem then
+        hooksecurefunc(GameTooltip, "SetBagItem", function(tip, bag, bagSlot)
+            if tip and tip.GetOwner and not tip:GetOwner() then
+                return
+            end
+            if not GetContainerItemLink then
+                return
+            end
+            Transmog:ChromieAttachLinkTransmogTooltip(tip or GameTooltip, GetContainerItemLink(bag, bagSlot))
         end)
     end
 end

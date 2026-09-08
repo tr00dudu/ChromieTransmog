@@ -363,13 +363,26 @@ function Transmog:ChromiePersistSetOwnedMog(link, mogId, iconPath)
         return
     end
     if mogId == nil or mogId == 0 then
-        char.owned[key] = nil
+        local itemId = self:IDFromLink(link)
+        if itemId then
+            self:ChromiePersistDropOwnedForItem(itemId)
+        else
+            char.owned[key] = nil
+        end
     else
+        local itemId = self:IDFromLink(link)
+        if itemId then
+            self:ChromiePersistDropOwnedForItem(itemId)
+            char = self:ChromiePersistChar()
+            if not char or not char.owned then
+                return
+            end
+        end
         char.owned[key] = mogId
     end
 end
 
--- If exactly one owned mog exists for this base item id, return it (bag fallback).
+-- Last owned mog for this base item id (bag / same-icon fallback).
 function Transmog:ChromiePersistFindOwnedMogForItem(itemId)
     itemId = itemId and tonumber(itemId)
     local char = self:ChromiePersistChar()
@@ -381,9 +394,6 @@ function Transmog:ChromiePersistFindOwnedMogForItem(itemId)
     local key, mogId
     for key, mogId in pairs(char.owned) do
         if string.sub(key, 1, string.len(prefix)) == prefix then
-            if found then
-                return nil
-            end
             found = mogId
         end
     end
@@ -452,6 +462,12 @@ function Transmog:ChromieSetDefinedSlots(name)
             slot = self:ChromieGuessSlotForItem(id, used)
         end
         if slot then
+            -- Scrape is 1H/2H-agnostic; do not treat an empty OH as part of this set.
+            if (slot == 16 or slot == 17) and not GetInventoryItemLink("player", slot) then
+                slot = nil
+            end
+        end
+        if slot then
             defined[slot] = true
             used[slot] = true
             n = n + 1
@@ -500,28 +516,25 @@ function Transmog:ChromieAppliedCopyFromSet(name)
         id = tonumber(id)
         if slot and self:ChromieSlotSupportsTransmog(slot) and id
             and (id > 1 or id == self.HIDDEN_ITEM_ID) then
-            local have = self.transmogStatusFromServer and self.transmogStatusFromServer[slot]
-            if have and have ~= 0 then
-                local link = GetInventoryItemLink("player", slot)
-                if link then
-                    self:ChromiePersistDropOwnedForItem(self:IDFromLink(link))
-                    if id == self.HIDDEN_ITEM_ID then
-                        self:ChromiePersistSetOwnedMog(link, id, "hidden")
-                        self.applied[slot] = id
-                    else
-                        if self.cacheItem then
-                            self:cacheItem(id)
-                        end
-                        local icon
-                        if GetItemIcon then
-                            icon = GetItemIcon(id)
-                        end
-                        if not icon then
-                            icon = select(10, GetItemInfo(id))
-                        end
-                        self:ChromiePersistSetOwnedMog(link, id, icon)
-                        self.applied[slot] = id
+            local link = GetInventoryItemLink("player", slot)
+            if link then
+                self:ChromiePersistDropOwnedForItem(self:IDFromLink(link))
+                if id == self.HIDDEN_ITEM_ID then
+                    self:ChromiePersistSetOwnedMog(link, id, "hidden")
+                    self.applied[slot] = id
+                else
+                    if self.cacheItem then
+                        self:cacheItem(id)
                     end
+                    local icon
+                    if GetItemIcon then
+                        icon = GetItemIcon(id)
+                    end
+                    if not icon then
+                        icon = select(10, GetItemInfo(id))
+                    end
+                    self:ChromiePersistSetOwnedMog(link, id, icon)
+                    self.applied[slot] = id
                 end
             end
         end
@@ -597,21 +610,14 @@ function Transmog:ChromieOwnedOnGearChanged()
         end
         local mog = link and self:ChromiePersistGetOwnedMog(link, icon)
         if (not mog or mog == 0) and changed[slot] and link then
-            local fromIcon = self.ChromieMogIdFromVisibleIcon and self:ChromieMogIdFromVisibleIcon(slot)
-            if fromIcon == 0 then
-                mog = 0
-            elseif fromIcon and fromIcon > 1 then
-                mog = fromIcon
-                self:ChromiePersistSetOwnedMog(link, mog, icon)
-            elseif fromIcon == self.HIDDEN_ITEM_ID then
-                mog = self.HIDDEN_ITEM_ID
-                self:ChromiePersistSetOwnedMog(link, mog, "hidden")
+            -- This item only. Do not copy fromServer[slot] or unique-icon
+            -- infer from w:Weapon:Sword onto a newly equipped piece.
+            local unique = self.ChromiePersistFindOwnedMogForItem
+                and self:ChromiePersistFindOwnedMogForItem(self:IDFromLink(link))
+            if unique and unique ~= 0 then
+                mog = unique
             else
-                local unique = self.ChromiePersistFindOwnedMogForItem
-                    and self:ChromiePersistFindOwnedMogForItem(self:IDFromLink(link))
-                if unique and unique ~= 0 then
-                    mog = unique
-                end
+                mog = 0
             end
         end
         if not mog then

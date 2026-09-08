@@ -139,9 +139,14 @@ end
 function Transmog:ChromieHasAnyMog()
     local _, slot
     for _, slot in pairs(self.inventorySlots) do
-        local have = self.transmogStatusFromServer[slot]
-        if have and have ~= 0 then
-            return true
+        if self:ChromieSlotSupportsTransmog(slot) and GetInventoryItemLink("player", slot) then
+            local applied = self.ChromiePersistGetApplied and self:ChromiePersistGetApplied(slot)
+            if applied and (applied > 1 or applied == self.HIDDEN_ITEM_ID) then
+                return true
+            end
+            if self:ChromieSlotTextureIsMogged(slot) or self:ChromieSlotTextureIsHidden(slot) then
+                return true
+            end
         end
     end
     return false
@@ -694,22 +699,23 @@ function Transmog:ChromieSetCacheCollectSlots(name)
             -- skip
         elseif not defined then
             if self:ChromieSlotTextureIsMogged(slot)
-                or (self.transmogStatusFromServer and self.transmogStatusFromServer[slot] == self.HIDDEN_ITEM_ID) then
+                or (self.ChromieSlotTextureIsHidden and self:ChromieSlotTextureIsHidden(slot)) then
                 self:ChromieSetCacheDbg("filter " .. label .. ": mogged, set slots unknown")
             end
         elseif not defined[slot] then
             if self:ChromieSlotTextureIsMogged(slot)
-                or (self.transmogStatusFromServer and self.transmogStatusFromServer[slot] == self.HIDDEN_ITEM_ID) then
+                or (self.ChromieSlotTextureIsHidden and self:ChromieSlotTextureIsHidden(slot)) then
                 self:ChromieSetCacheDbg("filter " .. label .. ": mogged but not in set")
             end
         elseif not GetInventoryItemLink("player", slot) then
             if defined and defined[slot] then
                 self:ChromieSetCacheDbg("skip " .. label .. ": in set, nothing equipped")
             end
-        elseif self.transmogStatusFromServer[slot] == self.HIDDEN_ITEM_ID then
+        elseif self.ChromieSlotTextureIsHidden and self:ChromieSlotTextureIsHidden(slot) then
             items[slot] = self.HIDDEN_ITEM_ID
             self:ChromieSetCacheDbg("save " .. label .. ": hidden")
-        elseif self:ChromieSlotTextureIsMogged(slot) then
+        elseif self:ChromieSlotIsMogged(slot) then
+            -- Same-icon mogs (e.g. Valorous→Heroes) match the original texture.
             table.insert(scanSlots, slot)
             self:ChromieSetCacheDbg("scan " .. label .. ": mogged " .. self:ChromieSetCacheSlotSummary(slot))
         elseif defined and defined[slot] then
@@ -725,19 +731,70 @@ function Transmog:ChromieSetCacheRecordSlot(slot)
         return
     end
     local mogId = 0
-    if self.transmogStatusFromServer[slot] == self.HIDDEN_ITEM_ID then
+    if not GetInventoryItemLink("player", slot) then
+        job.items[slot] = nil
+        self:ChromieSetCacheDbg("record " .. self:ChromieSetCacheSlotSummary(slot) .. " -> skip (unequipped)")
+        return
+    end
+    if self.ChromieSlotTextureIsHidden and self:ChromieSlotTextureIsHidden(slot) then
         mogId = self.HIDDEN_ITEM_ID
+    elseif self:ChromieIsWeaponSlot(slot) then
+        -- This set's scrape, not leftover fromServer[16] from a previous 2H.
+        mogId = self:ChromieSetCacheScrapeId(job.name, slot)
+        if (not mogId or mogId <= 1) and self.ChromiePersistGetApplied then
+            mogId = self:ChromiePersistGetApplied(slot)
+        end
+        if not mogId or mogId <= 1 then
+            mogId = nil
+        end
     elseif self:ChromieSlotIsMogged(slot) then
         local inferred = self.chromieLastScanInferred and self.chromieLastScanInferred[slot]
         inferred = inferred and tonumber(inferred)
         if inferred and inferred > 1 then
             mogId = inferred
         else
-            mogId = nil
+            mogId = self.ChromieResolveAppliedMogId and self:ChromieResolveAppliedMogId(slot)
+            if (not mogId or mogId <= 1) and self.ChromiePersistGetApplied then
+                mogId = self:ChromiePersistGetApplied(slot)
+            end
+            if not mogId or mogId <= 1 then
+                mogId = nil
+            end
         end
     end
-    job.items[slot] = mogId or 0
+    if mogId and (mogId > 1 or mogId == self.HIDDEN_ITEM_ID) then
+        job.items[slot] = mogId
+    elseif self:ChromieIsWeaponSlot(slot) then
+        if not job.items[slot] or job.items[slot] == 0 then
+            job.items[slot] = nil
+        end
+    else
+        job.items[slot] = mogId or 0
+    end
     self:ChromieSetCacheDbg("record " .. self:ChromieSetCacheSlotSummary(slot) .. " -> " .. tostring(job.items[slot]))
+end
+
+-- Set-view piece for this hand. Skip a 2H id when MH/OH is a 1H.
+function Transmog:ChromieSetCacheScrapeId(name, slot)
+    local scrape = name and self.chromieSetItems and self.chromieSetItems[name]
+    local id = scrape and scrape[slot]
+    id = id and tonumber(id)
+    if not id or id <= 1 then
+        return nil
+    end
+    local eq = GetInventoryItemLink("player", slot)
+    if not eq then
+        return nil
+    end
+    if self.cacheItem then
+        self:cacheItem(id)
+    end
+    local mogType = select(9, GetItemInfo(id))
+    local eqType = select(9, GetItemInfo(eq))
+    if mogType == "INVTYPE_2HWEAPON" and eqType and eqType ~= "INVTYPE_2HWEAPON" then
+        return nil
+    end
+    return id
 end
 
 function Transmog:ChromiePersistEnsureSetName(name)
@@ -767,16 +824,25 @@ function Transmog:ChromieSetCacheFinish()
         return
     end
     self:ChromieSetCacheDbg("finish \"" .. tostring(job.name) .. "\"")
-    local i = 1
-    while job.scanSlots[i] do
-        local slot = job.scanSlots[i]
-        local id = job.items[slot]
-        if not id or (id <= 1 and id ~= self.HIDDEN_ITEM_ID) then
-            self:ChromieSetCacheDbg("finish abort: missing mog on " .. self:ChromieSetCacheSlotSummary(slot)
-                .. " recorded=" .. tostring(id))
-            return
+    -- 2H / empty OH: do not keep a dual-wield OH from scrape or leftover fromServer.
+    if job.items then
+        if not GetInventoryItemLink("player", 16) then
+            job.items[16] = nil
         end
-        i = i + 1
+        if not GetInventoryItemLink("player", 17) then
+            job.items[17] = nil
+        end
+        local slot, id
+        for slot, id in pairs(job.items) do
+            id = tonumber(id)
+            if not id or (id <= 1 and id ~= self.HIDDEN_ITEM_ID) then
+                job.items[slot] = nil
+            end
+        end
+    end
+    if not job.items or not next(job.items) then
+        self:ChromieSetCacheDbg("finish: nothing to persist")
+        return
     end
     self:ChromiePersistEnsureSetName(job.name)
     if self.ChromiePersistSetItems then
@@ -917,21 +983,22 @@ function Transmog:ChromieSetCacheItemsFromWorn(name)
             -- skip
         elseif not GetInventoryItemLink("player", slot) then
             -- skip
-        elseif (self.transmogStatusFromServer and self.transmogStatusFromServer[slot] == self.HIDDEN_ITEM_ID)
-            or (self.ChromieSlotTextureIsHidden and self:ChromieSlotTextureIsHidden(slot)) then
+        elseif self.ChromieSlotTextureIsHidden and self:ChromieSlotTextureIsHidden(slot) then
             items[slot] = self.HIDDEN_ITEM_ID
         elseif self:ChromieSlotIsMogged(slot) then
-            local id = self.ChromieResolveAppliedMogId and self:ChromieResolveAppliedMogId(slot)
-            if (not id or id <= 1) and self.ChromiePersistGetApplied then
-                id = self:ChromiePersistGetApplied(slot)
-            end
-            id = id and tonumber(id)
-            if (not id or id <= 1) and self.transmogStatusFromServer then
-                local have = self.transmogStatusFromServer[slot]
-                if have and have > 1 then
-                    id = have
+            local id
+            if self:ChromieIsWeaponSlot(slot) then
+                id = self:ChromieSetCacheScrapeId(name, slot)
+                if (not id or id <= 1) and self.ChromiePersistGetApplied then
+                    id = self:ChromiePersistGetApplied(slot)
+                end
+            else
+                id = self.ChromieResolveAppliedMogId and self:ChromieResolveAppliedMogId(slot)
+                if (not id or id <= 1) and self.ChromiePersistGetApplied then
+                    id = self:ChromiePersistGetApplied(slot)
                 end
             end
+            id = id and tonumber(id)
             if id and id > 1 then
                 items[slot] = id
             else
@@ -1024,6 +1091,13 @@ function Transmog:ChromieMaybeCacheSetOnApply(name)
         return
     end
     local scanSlots, items = self:ChromieSetCacheCollectSlots(name)
+    local w = 16
+    while w <= 18 do
+        if not items[w] and GetInventoryItemLink("player", w) then
+            items[w] = self:ChromieSetCacheScrapeId(name, w)
+        end
+        w = w + 1
+    end
     local scanList = {}
     local i = 1
     while scanSlots[i] do

@@ -26,6 +26,7 @@ Notes
 - Home set previews need each set cached once (apply the set with the window open).
 - Incomplete cache can make the dummy look wrong until you scan those slots on the Cache tab.
 - Not-collected tooltips will be inaccurate for a slot/type until that type is scanned at a Warpweaver.
+- Known limitation: If you have multiple copies of the same item transmogged to different appearances, the tooltip will always show the most recently applied appearance for all of them. The transmogs themselves remain correct; only the tooltip name may be inaccurate.
 
 Screenshots
 --------
