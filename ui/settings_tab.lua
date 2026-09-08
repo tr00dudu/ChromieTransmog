@@ -25,6 +25,72 @@ function Transmog:ChromieSettingsTabEnsure()
     end)
     f.uncollectedCheck = uncollected
 
+    local colorLabel = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    colorLabel:SetText("( Color:")
+    if ulabel then
+        colorLabel:SetPoint("LEFT", ulabel, "RIGHT", 20, -1)
+    else
+        colorLabel:SetPoint("LEFT", uncollected, "RIGHT", 220, 0)
+    end
+    f.uncollectedColorLabel = colorLabel
+
+    local swatch = CreateFrame("Button", "ChromieTransmogSettingsUncollectedColor", f)
+    swatch:SetWidth(16)
+    swatch:SetHeight(16)
+    swatch:SetPoint("LEFT", colorLabel, "RIGHT", 4, 0)
+    local swatchTex = swatch:CreateTexture(nil, "ARTWORK")
+    swatchTex:SetAllPoints()
+    swatchTex:SetTexture("Interface\\ChatFrame\\ChatFrameColorSwatch")
+    swatch.tex = swatchTex
+    swatch:SetScript("OnClick", function()
+        local r, g, b = Transmog:ChromieAccountUncollectedTipColor()
+        ColorPickerFrame.hasOpacity = false
+        ColorPickerFrame.opacityFunc = nil
+        ColorPickerFrame.func = function()
+            local nr, ng, nb = ColorPickerFrame:GetColorRGB()
+            Transmog:ChromieAccountSetUncollectedTipColor(nr, ng, nb)
+            Transmog:ChromieSettingsTabSync()
+        end
+        ColorPickerFrame.cancelFunc = function(prev)
+            local pr, pg, pb = r, g, b
+            if type(prev) == "table" then
+                pr = prev.r or prev[1] or r
+                pg = prev.g or prev[2] or g
+                pb = prev.b or prev[3] or b
+            end
+            Transmog:ChromieAccountSetUncollectedTipColor(pr, pg, pb)
+            Transmog:ChromieSettingsTabSync()
+        end
+        ColorPickerFrame.previousValues = { r = r, g = g, b = b }
+        ColorPickerFrame:SetColorRGB(r, g, b)
+        ColorPickerFrame:SetFrameStrata("FULLSCREEN_DIALOG")
+        ShowUIPanel(ColorPickerFrame)
+    end)
+    f.uncollectedColor = swatch
+
+    local reset = CreateFrame("Button", "ChromieTransmogSettingsUncollectedColorReset", f)
+    reset:SetWidth(32)
+    reset:SetHeight(14)
+    reset:SetPoint("LEFT", swatch, "RIGHT", 4, 0)
+    local resetText = reset:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    resetText:SetPoint("CENTER")
+    resetText:SetText("Reset")
+    reset:SetFontString(resetText)
+    reset:SetHighlightFontObject("GameFontHighlightSmall")
+    reset:SetScript("OnClick", function()
+        Transmog:ChromieAccountResetUncollectedTipColor()
+        if ColorPickerFrame:IsShown() then
+            HideUIPanel(ColorPickerFrame)
+        end
+        Transmog:ChromieSettingsTabSync()
+    end)
+    f.uncollectedColorReset = reset
+
+    local colorClose = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    colorClose:SetText(")")
+    colorClose:SetPoint("LEFT", reset, "RIGHT", 2, 0)
+    f.uncollectedColorClose = colorClose
+
     local function makeUncollectedCheck(name, text, anchor, dx, flag)
         local cb = CreateFrame("CheckButton", name, f, "OptionsCheckButtonTemplate")
         cb:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", dx, 2)
@@ -107,6 +173,10 @@ function Transmog:ChromieSettingsTabSync()
     if f.uncollectedCheck and Transmog.ChromieAccountFlag then
         local tipOn = Transmog:ChromieAccountFlag("showUncollectedTip")
         f.uncollectedCheck:SetChecked(tipOn and 1 or nil)
+        if f.uncollectedColor and f.uncollectedColor.tex then
+            local r, g, b = Transmog:ChromieAccountUncollectedTipColor()
+            f.uncollectedColor.tex:SetVertexColor(r, g, b)
+        end
         local function syncChild(cb, enabled, flag)
             if not cb then
                 return

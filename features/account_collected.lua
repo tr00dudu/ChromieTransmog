@@ -152,6 +152,29 @@ function Transmog:ChromieAccountSetFlag(name, on)
     ChromieTransmogDB[name] = not not on
 end
 
+function Transmog:ChromieAccountUncollectedTipColor()
+    self:ChromieAccountCollectedEnsure()
+    local c = ChromieTransmogDB.uncollectedTipColor
+    if type(c) == "table" then
+        return c.r or TIP_R, c.g or TIP_G, c.b or TIP_B
+    end
+    return TIP_R, TIP_G, TIP_B
+end
+
+function Transmog:ChromieAccountSetUncollectedTipColor(r, g, b)
+    self:ChromieAccountCollectedEnsure()
+    ChromieTransmogDB.uncollectedTipColor = {
+        r = tonumber(r) or TIP_R,
+        g = tonumber(g) or TIP_G,
+        b = tonumber(b) or TIP_B,
+    }
+end
+
+function Transmog:ChromieAccountResetUncollectedTipColor()
+    self:ChromieAccountCollectedEnsure()
+    ChromieTransmogDB.uncollectedTipColor = nil
+end
+
 -- Gossip scrape: copy live ids into the account set. Never shrink or wipe.
 -- Empty scrapes must not clear a previous OK scrape flag.
 function Transmog:ChromieAccountNoteScan(key, liveSet, liveN, scanOk)
@@ -387,7 +410,8 @@ function Transmog:ChromieAccountAttachUncollected(tip)
         return
     end
     if tip.AddLine then
-        tip:AddLine(MISSING_LINE, TIP_R, TIP_G, TIP_B)
+        local r, g, b = self:ChromieAccountUncollectedTipColor()
+        tip:AddLine(MISSING_LINE, r, g, b)
         tip:Show()
     end
 end
