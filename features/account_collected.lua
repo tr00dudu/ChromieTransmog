@@ -480,10 +480,11 @@ local function hookTip(tip)
         tip.chromieAccountSetItemHooked = true
         local orig = tip:GetScript("OnTooltipSetItem")
         tip:SetScript("OnTooltipSetItem", function()
+            local self = this or tip
             if orig then
-                orig()
+                orig(self)
             end
-            Transmog:ChromieAccountAttachUncollected(this or tip)
+            Transmog:ChromieAccountAttachUncollected(self)
         end)
     end
 end

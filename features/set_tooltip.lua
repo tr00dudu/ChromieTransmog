@@ -407,10 +407,10 @@ local function hookTip(tip)
     if tip.GetScript and tip.SetScript then
         local origSet = tip:GetScript("OnTooltipSetItem")
         tip:SetScript("OnTooltipSetItem", function()
-            if origSet then
-                origSet()
-            end
             local self = this or tip
+            if origSet then
+                origSet(self)
+            end
             Transmog:ChromieFixSetTooltip(self, self.chromieSetUnit or "player")
         end)
     end
