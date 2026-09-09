@@ -113,21 +113,6 @@ function Transmog:ChromiePatchBlizzardClose()
         end)
     end
 
-    if not self.chromieWrappedPopupShow and StaticPopup_Show then
-        self.chromieWrappedPopupShow = true
-        local orig = StaticPopup_Show
-        StaticPopup_Show = function(which, text_arg1, text_arg2, data)
-            local popup = orig(which, text_arg1, text_arg2, data)
-            if Transmog.chromieJob == "sets-price"
-                and not Transmog.chromieSetPriceCaptured
-                and (which == "GOSSIP_CONFIRM" or which == "GOSSIP_CONFIRM_MONEY" or which == "GOSSIP_ENTER_CODE") then
-                Transmog:ChromieDimGossipConfirm()
-                Transmog:ChromieScheduleSetPriceCapture()
-            end
-            return popup
-        end
-    end
-
     if not self.chromiePatchedMoneyFrame and MoneyFrame_Update then
         self.chromiePatchedMoneyFrame = true
         hooksecurefunc("MoneyFrame_Update", function(frame, money)
