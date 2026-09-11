@@ -120,8 +120,8 @@ local function leftLine(tip, i)
     return getglobal(name .. "TextLeft" .. i)
 end
 
--- One entry per equipped slot: real item name plus mog appearance name.
--- C lists Heroes' when Valorous is mogged to Heroes'; count each slot once.
+-- One entry per equipped slot: real item only. Mog appearance must not
+-- count as a set piece (C already wrongly does that; we must not copy it).
 local function addAlias(aliases, name)
     name = normalizeName(name)
     if name == "" then
@@ -150,22 +150,6 @@ local function equippedNames(unit)
         if link then
             local aliases = {}
             addAlias(aliases, GetItemInfo(link))
-            if unit == "player" and Transmog.ChromiePersistGetOwnedMog then
-                local mogId = Transmog:ChromiePersistGetOwnedMog(link,
-                    Transmog.ChromieOwnedIconForSlot and Transmog:ChromieOwnedIconForSlot(slot))
-                if (not mogId or mogId == 0) and Transmog.ChromiePersistFindOwnedMogForItem then
-                    mogId = Transmog:ChromiePersistFindOwnedMogForItem(Transmog:IDFromLink(link))
-                end
-                mogId = mogId and tonumber(mogId)
-                if mogId and mogId > 1 then
-                    local mogName = GetItemInfo(mogId)
-                    if not mogName and Transmog.cacheItem then
-                        Transmog:cacheItem(mogId)
-                        mogName = GetItemInfo(mogId)
-                    end
-                    addAlias(aliases, mogName)
-                end
-            end
             if aliases[1] then
                 table.insert(names, aliases)
             end
