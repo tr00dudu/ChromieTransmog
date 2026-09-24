@@ -28,6 +28,11 @@ Notes
 - Not-collected tooltips will be inaccurate for a slot/type until that type is scanned at a Warpweaver.
 - Known limitation: If you have multiple copies of the same item transmogged to different appearances, the tooltip will always show the most recently applied appearance for all of them. The transmogs themselves remain correct; only the tooltip name may be inaccurate.
 
+How to download/install
+-----
+- Click on the newest ChromieTransmog.zip in <a href="https://github.com/tr00dudu/ChromieTransmog/releases">Releases</a>, open zip file and copy the ChromieTransmog folder to your `ChromieCraft/Interface/AddOns` folder.
+- If you alternatively download code from the repository directly, the folder inside the zip might be called something like `ChromieTransmog-master` - you have to rename the folder to just `ChromieTransmog` otherwise the addon will not load.
+
 Screenshots
 --------
 
