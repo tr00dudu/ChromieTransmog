@@ -550,9 +550,7 @@ function Transmog:ChromieFinishSlotScan(slot)
     self:ChromieMergeScanOmittedIds(key, slot, self.chromieLastScanInferred[slot])
     entry = self:ChromieUnlockEntry(key)
     if self.ChromieAccountNoteScan then
-        local liveN = self:tableSize(liveSet)
-        local scanOk = entry and entry.status == "ok" and liveN > 0
-        self:ChromieAccountNoteScan(key, liveSet, liveN, scanOk)
+        self:ChromieAccountNoteScan(key, liveSet)
     end
     local total = 0
     if entry and entry.ids then

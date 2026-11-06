@@ -63,62 +63,6 @@ local CLASS_WEAPONS = {
     },
 }
 
--- Armor slots that use cloth/leather/mail/plate (Back/cloak is cloth only).
-local ARMOR_BODY_SLOTS = { 1, 3, 5, 6, 7, 8, 9, 10 }
-local ARMOR_GROUPS = {
-    { name = "Cloth", classNum = 5, extraSlots = { 15 } },
-    { name = "Leather", classNum = 6 },
-    { name = "Mail", classNum = 7 },
-    { name = "Plate", classNum = 8 },
-}
-
--- Weapon-type cache keys (EN + ES). One scrape key per type, not per slot.
-local WEAPON_GROUPS = {
-    { name = "One-Handed Axes", keys = { "w:Weapon:One-Handed Axes", "w:Arma:Hachas de una mano" } },
-    { name = "Two-Handed Axes", keys = { "w:Weapon:Two-Handed Axes", "w:Arma:Hachas de dos manos" } },
-    { name = "Bows", keys = { "w:Weapon:Bows", "w:Arma:Arcos" } },
-    { name = "Guns", keys = { "w:Weapon:Guns", "w:Arma:Armas de fuego" } },
-    { name = "One-Handed Maces", keys = { "w:Weapon:One-Handed Maces", "w:Arma:Mazas de una mano" } },
-    { name = "Two-Handed Maces", keys = { "w:Weapon:Two-Handed Maces", "w:Arma:Mazas de dos manos" } },
-    { name = "Polearms", keys = { "w:Weapon:Polearms", "w:Arma:Armas de asta" } },
-    { name = "One-Handed Swords", keys = { "w:Weapon:One-Handed Swords", "w:Arma:Espadas de una mano" } },
-    { name = "Two-Handed Swords", keys = { "w:Weapon:Two-Handed Swords", "w:Arma:Espadas de dos manos" } },
-    { name = "Staves", keys = { "w:Weapon:Staves", "w:Arma:Bastones" } },
-    { name = "Fist Weapons", keys = { "w:Weapon:Fist Weapons", "w:Arma:Armas de puño" } },
-    { name = "Daggers", keys = { "w:Weapon:Daggers", "w:Arma:Dagas" } },
-    { name = "Thrown", keys = { "w:Weapon:Thrown" } },
-    { name = "Crossbows", keys = { "w:Weapon:Crossbows", "w:Arma:Ballestas" } },
-    { name = "Wands", keys = { "w:Weapon:Wands", "w:Arma:Varitas" } },
-    { name = "Shields", keys = { "w:Armor:Shields", "w:Armadura:Escudos" } },
-    { name = "Off-hands", keys = { "w:Armor:Miscellaneous", "w:Armadura:Misceláneo" } },
-}
-
-local function scrapedOkHas(okSet, keys)
-    local i = 1
-    while keys and keys[i] do
-        if okSet[keys[i]] then
-            return true
-        end
-        i = i + 1
-    end
-    return false
-end
-
-local function armorSlotsForGroup(group)
-    local slots = {}
-    local i = 1
-    while ARMOR_BODY_SLOTS[i] do
-        table.insert(slots, ARMOR_BODY_SLOTS[i])
-        i = i + 1
-    end
-    i = 1
-    while group.extraSlots and group.extraSlots[i] do
-        table.insert(slots, group.extraSlots[i])
-        i = i + 1
-    end
-    return slots
-end
-
 function Transmog:ChromieAccountCollectedEnsure()
     if self.ChromieEnsurePersistDB then
         self:ChromieEnsurePersistDB()
@@ -127,9 +71,6 @@ function Transmog:ChromieAccountCollectedEnsure()
     end
     if not ChromieTransmogDB.accountCollected then
         ChromieTransmogDB.accountCollected = {}
-    end
-    if not ChromieTransmogDB.accountScrapedOk then
-        ChromieTransmogDB.accountScrapedOk = {}
     end
     local k
     for k in pairs(FLAG_DEFAULTS) do
@@ -200,8 +141,7 @@ function Transmog:ChromieAccountCollectedGroups()
 end
 
 -- Gossip scrape: copy live ids into the account set. Never shrink or wipe.
--- Empty scrapes must not clear a previous OK scrape flag.
-function Transmog:ChromieAccountNoteScan(key, liveSet, liveN, scanOk)
+function Transmog:ChromieAccountNoteScan(key, liveSet)
     self:ChromieAccountInvalidateCollectedGroups()
     self:ChromieAccountCollectedEnsure()
     local function addId(id)
@@ -222,14 +162,14 @@ function Transmog:ChromieAccountNoteScan(key, liveSet, liveN, scanOk)
             addId(id)
         end
     end
-    if scanOk and key then
-        ChromieTransmogDB.accountScrapedOk[key] = true
-    end
     self:ChromieAccountInvalidateCollectedGroups()
 end
 
 function Transmog:ChromieAccountNoteSystemMessage(msg)
     if not msg or type(msg) ~= "string" then
+        return
+    end
+    if self.ChromieSyncNoteLine and self:ChromieSyncNoteLine(msg) then
         return
     end
     if not string.find(string.lower(msg), COLLECT_MSG, 1, true) then
@@ -241,13 +181,6 @@ function Transmog:ChromieAccountNoteSystemMessage(msg)
     end
     self:ChromieAccountCollectedEnsure()
     ChromieTransmogDB.accountCollected[id] = true
-    self:ChromieAccountInvalidateCollectedGroups()
-end
-
-function Transmog:ChromieAccountDropCollection()
-    self:ChromieAccountCollectedEnsure()
-    ChromieTransmogDB.accountCollected = {}
-    ChromieTransmogDB.accountScrapedOk = {}
     self:ChromieAccountInvalidateCollectedGroups()
 end
 
@@ -450,59 +383,6 @@ end
 
 function Transmog:ChromieAccountScanStatusLines()
     self:ChromieAccountCollectedEnsure()
-    local okSet = ChromieTransmogDB.accountScrapedOk
-    if type(okSet) ~= "table" then
-        okSet = {}
-    end
-    local lines = {}
-    table.insert(lines, "|cffaaaaaaNot-collected tooltips can be wrong for a slot/type/proficiency until that type is scanned at a Warpweaver. See individual slot statuses below.|r")
-    table.insert(lines, "")
-
-    local g = 1
-    while ARMOR_GROUPS[g] do
-        local group = ARMOR_GROUPS[g]
-        local slots = armorSlotsForGroup(group)
-        local missing = {}
-        local okN = 0
-        local total = 0
-        local s = 1
-        while slots[s] do
-            total = total + 1
-            local key = "s:" .. tostring(slots[s]) .. ":" .. tostring(group.classNum)
-            if okSet[key] then
-                okN = okN + 1
-            else
-                local label
-                if self.ChromieSlotLabelShort then
-                    label = self:ChromieSlotLabelShort(slots[s])
-                end
-                table.insert(missing, label or ("slot " .. tostring(slots[s])))
-            end
-            s = s + 1
-        end
-        if okN == 0 then
-            table.insert(lines, group.name .. ": missing")
-        elseif okN == total then
-            table.insert(lines, "|cff00ff00" .. group.name .. ": OK|r")
-        else
-            table.insert(lines, group.name .. ": Partial (" .. table.concat(missing, ", ") .. " missing)")
-        end
-        g = g + 1
-    end
-
-    table.insert(lines, "")
-
-    g = 1
-    while WEAPON_GROUPS[g] do
-        local group = WEAPON_GROUPS[g]
-        if scrapedOkHas(okSet, group.keys) then
-            table.insert(lines, "|cff00ff00" .. group.name .. ": OK|r")
-        else
-            table.insert(lines, group.name .. ": missing")
-        end
-        g = g + 1
-    end
-
     local n = 0
     local collected = ChromieTransmogDB.accountCollected
     if collected then
@@ -511,7 +391,10 @@ function Transmog:ChromieAccountScanStatusLines()
             n = n + 1
         end
     end
-    table.insert(lines, "")
+    local lines = {}
+    if self.chromieSyncFailed then
+        table.insert(lines, "Status: last sync failed")
+    end
     table.insert(lines, n .. " appearances collected")
     return lines
 end
@@ -554,25 +437,215 @@ function Transmog:ChromieAccountInstallTooltipHooks()
     hookTip(ItemRefTooltip)
 end
 
-StaticPopupDialogs["CHROMIE_TRANSMOG_DROP_COLLECTION"] = {
-    text = "Drop the account-wide collection cache?\n\nThis does not clear this character's Chromie scrape cache or Warpweaver sets.\n\nOnly do this if collection data looks seriously wrong.",
-    button1 = TEXT(YES),
-    button2 = TEXT(NO),
-    OnAccept = function()
-        if Transmog.ChromieAccountDropCollection then
-            Transmog:ChromieAccountDropCollection()
+local SYNC_QUIET_SEC = 1
+local SYNC_FAIL_SEC = 5
+
+function Transmog:ChromieAccountCollectionEmpty()
+    self:ChromieAccountCollectedEnsure()
+    local collected = ChromieTransmogDB.accountCollected
+    if not collected then
+        return true
+    end
+    local id, on
+    for id, on in pairs(collected) do
+        id = tonumber(id)
+        if on and id and id > 1 then
+            return false
         end
-        if Transmog.ChromieCacheTabRefresh then
-            Transmog:ChromieCacheTabRefresh(true)
+    end
+    return true
+end
+
+function Transmog:ChromieSyncEnsureTicker()
+    if self.chromieSyncTicker then
+        return
+    end
+    local f = CreateFrame("Frame")
+    f:Hide()
+    f:SetScript("OnUpdate", function()
+        local dt = arg1 or 0
+        if Transmog.chromieSyncQuietLeft then
+            Transmog.chromieSyncQuietLeft = Transmog.chromieSyncQuietLeft - dt
+            if Transmog.chromieSyncQuietLeft <= 0 then
+                Transmog.chromieSyncQuietLeft = nil
+                Transmog:ChromieSyncCommit()
+            end
         end
-        if Transmog.Chat then
-            Transmog:Chat("Account collection cache cleared.")
+        if Transmog.chromieSyncFailLeft then
+            Transmog.chromieSyncFailLeft = Transmog.chromieSyncFailLeft - dt
+            if Transmog.chromieSyncFailLeft <= 0 then
+                Transmog.chromieSyncFailLeft = nil
+                if not Transmog.chromieSyncGotLine then
+                    Transmog:ChromieSyncFail()
+                end
+            end
         end
-    end,
-    timeout = 0,
-    whileDead = 1,
-    hideOnEscape = 1,
-    showAlert = 1,
-}
+        if not Transmog.chromieSyncQuietLeft and not Transmog.chromieSyncFailLeft then
+            f:Hide()
+        end
+    end)
+    self.chromieSyncTicker = f
+end
+
+function Transmog:ChromieSyncArmQuiet()
+    self.chromieSyncQuietLeft = SYNC_QUIET_SEC
+    self:ChromieSyncEnsureTicker()
+    self.chromieSyncTicker:Show()
+end
+
+function Transmog:ChromieSyncInstallFilter()
+    if self.chromieSyncFilterOn or not ChatFrame_AddMessageEventFilter then
+        return
+    end
+    self.chromieSyncFilterOn = true
+    ChatFrame_AddMessageEventFilter("CHAT_MSG_SYSTEM", function(...)
+        local n = select("#", ...)
+        local i = 1
+        while i <= n do
+            local v = select(i, ...)
+            if type(v) == "string" and string.find(v, "TRANSMOG_SYNC:", 1, true) then
+                return true
+            end
+            i = i + 1
+        end
+    end)
+end
+
+function Transmog:ChromieSyncNoteLine(msg)
+    if not msg or not string.find(msg, "TRANSMOG_SYNC:", 1, true) then
+        return false
+    end
+    local id = tonumber(string.match(msg, "TRANSMOG_SYNC:%s*(%d+)"))
+    if id and id > 1 then
+        if not self.chromieSyncBurst then
+            self.chromieSyncIds = {}
+            self.chromieSyncBurst = true
+        end
+        self.chromieSyncIds[id] = true
+        self.chromieSyncGotLine = true
+        self.chromieSyncFailLeft = nil
+        self:ChromieSyncArmQuiet()
+    end
+    return true
+end
+
+function Transmog:ChromieSyncSend()
+    if self.chromieSyncDone or self.chromieSyncInFlight then
+        return
+    end
+    self:ChromieSyncInstallFilter()
+    local box = ChatFrame1EditBox or (DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.editBox)
+    if not box or not ChatEdit_SendText then
+        self:ChatAlways(".transmog sync could not be sent.")
+        self.chromieSyncFailed = true
+        if self.ChromieCacheTabRefresh then
+            self:ChromieCacheTabRefresh(true)
+        end
+        return
+    end
+    local old = box:GetText() or ""
+    box:SetText(".transmog sync")
+    ChatEdit_SendText(box, 0)
+    box:SetText(old)
+    self.chromieSyncInFlight = true
+    self.chromieSyncGotLine = nil
+    self.chromieSyncFailLeft = SYNC_FAIL_SEC
+    self:ChromieSyncEnsureTicker()
+    self.chromieSyncTicker:Show()
+end
+
+function Transmog:ChromieSyncFollowOpen()
+    if not self.chromieSyncOpenAfterFlight or self.chromieSyncDone then
+        self.chromieSyncOpenAfterFlight = nil
+        return
+    end
+    self.chromieSyncOpenAfterFlight = nil
+    self.chromieSyncOpenChecked = true
+    self:ChromieSyncSend()
+end
+
+function Transmog:ChromieSyncFail()
+    self.chromieSyncInFlight = nil
+    self.chromieSyncBurst = nil
+    self.chromieSyncFailed = true
+    self:ChatAlways(".transmog sync returned nothing. Collection cache is unchanged.")
+    if self.ChromieCacheTabRefresh then
+        self:ChromieCacheTabRefresh(true)
+    end
+    self:ChromieSyncFollowOpen()
+end
+
+function Transmog:ChromieSyncCommit()
+    local fresh = {}
+    local n = 0
+    local id
+    for id in pairs(self.chromieSyncIds or {}) do
+        id = tonumber(id)
+        if id and id > 1 then
+            fresh[id] = true
+            n = n + 1
+        end
+    end
+    self.chromieSyncBurst = nil
+    self.chromieSyncInFlight = nil
+    if n == 0 then
+        self.chromieSyncFailed = true
+        self:ChatAlways(".transmog sync returned nothing. Collection cache is unchanged.")
+        if self.ChromieCacheTabRefresh then
+            self:ChromieCacheTabRefresh(true)
+        end
+        self:ChromieSyncFollowOpen()
+        return
+    end
+    self:ChromieAccountCollectedEnsure()
+    ChromieTransmogDB.accountCollected = fresh
+    ChromieTransmogDB.accountSynced = true
+    self.chromieSyncFailed = nil
+    self:ChromieAccountInvalidateCollectedGroups()
+    self.chromieSyncDone = true
+    self.chromieSyncOpenAfterFlight = nil
+    if self.ChromieCacheTabRefresh then
+        self:ChromieCacheTabRefresh(true)
+    end
+end
+
+function Transmog:ChromieSyncRequest(source)
+    if self.chromieSyncDone then
+        return
+    end
+    if source == "world" then
+        if self.chromieSyncWorldChecked then
+            return
+        end
+        self.chromieSyncWorldChecked = true
+        if not self:ChromieAccountCollectionEmpty() then
+            return
+        end
+    elseif source == "open" then
+        if self.chromieSyncOpenChecked then
+            return
+        end
+        if self.chromieSyncInFlight then
+            self.chromieSyncOpenAfterFlight = true
+            return
+        end
+        self.chromieSyncOpenChecked = true
+    else
+        return
+    end
+    if self.chromieSyncInFlight then
+        return
+    end
+    self:ChromieSyncSend()
+end
+
+local syncWorld = CreateFrame("Frame")
+syncWorld:RegisterEvent("PLAYER_ENTERING_WORLD")
+syncWorld:SetScript("OnEvent", function()
+    if Transmog.ChromieSyncRequest then
+        Transmog:ChromieSyncRequest("world")
+    end
+end)
 
 Transmog:ChromieAccountInstallTooltipHooks()
+Transmog:ChromieSyncInstallFilter()

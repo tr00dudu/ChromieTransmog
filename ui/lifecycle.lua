@@ -80,6 +80,9 @@ function ChromieTransmogFrame_OnShow()
     if Transmog.ChromieApplyUiScale then
         Transmog:ChromieApplyUiScale()
     end
+    if Transmog.ChromieSyncRequest then
+        Transmog:ChromieSyncRequest("open")
+    end
 
     Transmog.currentTransmogSlot = nil
     Transmog.currentTransmogSlotName = nil

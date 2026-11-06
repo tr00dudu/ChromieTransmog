@@ -106,17 +106,6 @@ function Transmog:ChromieCacheTabEnsure()
     scanAll:SetFrameLevel(f:GetFrameLevel() + 4)
     f.scanAll = scanAll
 
-    local dropCol = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-    dropCol:SetWidth(120)
-    dropCol:SetHeight(22)
-    dropCol:SetPoint("BOTTOMRIGHT", -25, 8)
-    dropCol:SetText("Drop collection")
-    dropCol:SetScript("OnClick", function()
-        StaticPopup_Show("CHROMIE_TRANSMOG_DROP_COLLECTION")
-    end)
-    dropCol:SetFrameLevel(f:GetFrameLevel() + 4)
-    f.dropCollection = dropCol
-
     self.cacheTabFrame = f
     return f
 end
@@ -348,13 +337,6 @@ function Transmog:ChromieCacheTabRefresh(force)
     end
 
     local showAccount = self.ChromieAccountFlag and self:ChromieAccountFlag("showUncollectedTip")
-    if f.dropCollection then
-        if showAccount then
-            f.dropCollection:Show()
-        else
-            f.dropCollection:Hide()
-        end
-    end
     local accountLines
     if showAccount and self.ChromieAccountScanStatusLines then
         local ok, result = pcall(self.ChromieAccountScanStatusLines, self)
