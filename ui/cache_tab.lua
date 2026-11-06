@@ -72,17 +72,7 @@ function Transmog:ChromieCacheTabEnsure()
     drop:SetPoint("BOTTOMLEFT", 8, 8)
     drop:SetText("Drop cache")
     drop:SetScript("OnClick", function()
-        if Transmog.ChromiePersistDropAll then
-            Transmog:ChromiePersistDropAll()
-        else
-            Transmog:ChromiePersistDropUnlocks()
-            Transmog.chromieCache = {}
-            Transmog.chromieCacheIcon = {}
-            Transmog.chromieSessionScanned = {}
-            Transmog.chromieScanQueue = nil
-        end
-        Transmog:ChromieCacheTabRefresh(true)
-        Transmog:Chat("Cache cleared (unlocks, owned mogs, and set piece cache). Warpweaver sets are unchanged. No reload needed.")
+        StaticPopup_Show("CHROMIE_TRANSMOG_DROP_CACHE")
     end)
     drop:SetFrameLevel(f:GetFrameLevel() + 4)
     f.drop = drop
@@ -109,6 +99,33 @@ function Transmog:ChromieCacheTabEnsure()
     self.cacheTabFrame = f
     return f
 end
+
+StaticPopupDialogs["CHROMIE_TRANSMOG_DROP_CACHE"] = {
+    text = "Drop the character cache?\n\nThis clears unlocks, owned mogs, and the set piece cache. Warpweaver sets are unchanged.",
+    button1 = TEXT(YES),
+    button2 = TEXT(NO),
+    OnAccept = function()
+        if Transmog.ChromiePersistDropAll then
+            Transmog:ChromiePersistDropAll()
+        else
+            Transmog:ChromiePersistDropUnlocks()
+            Transmog.chromieCache = {}
+            Transmog.chromieCacheIcon = {}
+            Transmog.chromieSessionScanned = {}
+            Transmog.chromieScanQueue = nil
+        end
+        if Transmog.ChromieCacheTabRefresh then
+            Transmog:ChromieCacheTabRefresh(true)
+        end
+        if Transmog.Chat then
+            Transmog:Chat("Cache cleared (unlocks, owned mogs, and set piece cache). Warpweaver sets are unchanged. No reload needed.")
+        end
+    end,
+    timeout = 0,
+    whileDead = 1,
+    hideOnEscape = 1,
+    showAlert = 1,
+}
 
 function Transmog:ChromieCacheTabShow()
     local f = self:ChromieCacheTabEnsure()
