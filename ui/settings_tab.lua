@@ -1,30 +1,31 @@
 local Transmog = _G.ChromieTransmog
 
-Transmog.UI_SCALES = { 1, 1.2, 1.5, 2 }
+local UI_SCALE_MIN = 1
+local UI_SCALE_MAX = 2
+local UI_SCALE_STEP = 0.1
 
-function Transmog:ChromieMatchUiScale(scale)
-    scale = tonumber(scale)
-    local scales = self.UI_SCALES
-    local i = 1
-    while scales[i] do
-        if scale and math.abs(scale - scales[i]) < 0.01 then
-            return scales[i]
-        end
-        i = i + 1
+function Transmog:ChromieClampUiScale(scale)
+    scale = tonumber(scale) or UI_SCALE_MIN
+    scale = math.floor(scale * 10 + 0.5) / 10
+    if scale < UI_SCALE_MIN then
+        return UI_SCALE_MIN
     end
-    return nil
+    if scale > UI_SCALE_MAX then
+        return UI_SCALE_MAX
+    end
+    return scale
 end
 
 function Transmog:ChromieUiScale()
     if self.ChromieEnsurePersistDB then
         self:ChromieEnsurePersistDB()
     end
-    local s = ChromieTransmogDB and self:ChromieMatchUiScale(ChromieTransmogDB.uiScale)
-    return s or 1
+    local s = ChromieTransmogDB and ChromieTransmogDB.uiScale
+    return self:ChromieClampUiScale(s)
 end
 
 function Transmog:ChromieUiScaleLabel(scale)
-    scale = self:ChromieMatchUiScale(scale) or self:ChromieUiScale()
+    scale = self:ChromieClampUiScale(scale or self:ChromieUiScale())
     if scale == math.floor(scale) then
         return tostring(math.floor(scale)) .. "x"
     end
@@ -38,31 +39,13 @@ function Transmog:ChromieApplyUiScale()
 end
 
 function Transmog:ChromieSetUiScale(scale)
-    scale = self:ChromieMatchUiScale(scale) or 1
+    scale = self:ChromieClampUiScale(scale)
     if self.ChromieEnsurePersistDB then
         self:ChromieEnsurePersistDB()
     end
     ChromieTransmogDB.uiScale = scale
     self:ChromieApplyUiScale()
     self:ChromieSettingsTabSync()
-end
-
-function ChromieTransmogSettingsScale_Init()
-    local scales = Transmog.UI_SCALES
-    local current = Transmog:ChromieUiScale()
-    local i = 1
-    while scales[i] do
-        local s = scales[i]
-        local info = {}
-        info.text = Transmog:ChromieUiScaleLabel(s)
-        info.arg1 = s
-        info.checked = math.abs(current - s) < 0.01
-        info.func = function(a, b)
-            Transmog:ChromieSetUiScale(tonumber(b) or tonumber(a))
-        end
-        UIDropDownMenu_AddButton(info)
-        i = i + 1
-    end
 end
 
 function Transmog:ChromieSettingsTabEnsure()
@@ -83,12 +66,32 @@ function Transmog:ChromieSettingsTabEnsure()
     scaleLabel:SetText("Window scale")
     f.scaleLabel = scaleLabel
 
-    local scaleDrop = CreateFrame("Frame", "ChromieTransmogSettingsScale", f, "UIDropDownMenuTemplate")
-    scaleDrop:SetPoint("LEFT", scaleLabel, "RIGHT", -12, -2)
-    UIDropDownMenu_SetWidth(scaleDrop, 70)
-    UIDropDownMenu_Initialize(scaleDrop, ChromieTransmogSettingsScale_Init)
-    UIDropDownMenu_SetText(scaleDrop, self:ChromieUiScaleLabel())
-    f.scaleDrop = scaleDrop
+    local scaleMinus = CreateFrame("Button", "ChromieTransmogSettingsScaleMinus", f, "UIPanelButtonTemplate")
+    scaleMinus:SetWidth(24)
+    scaleMinus:SetHeight(22)
+    scaleMinus:SetPoint("LEFT", scaleLabel, "RIGHT", 8, 0)
+    scaleMinus:SetText("-")
+    scaleMinus:SetScript("OnClick", function()
+        Transmog:ChromieSetUiScale(Transmog:ChromieUiScale() - UI_SCALE_STEP)
+    end)
+    f.scaleMinus = scaleMinus
+
+    local scaleValue = f:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    scaleValue:SetPoint("LEFT", scaleMinus, "RIGHT", 6, 0)
+    scaleValue:SetWidth(36)
+    scaleValue:SetJustifyH("CENTER")
+    scaleValue:SetText(self:ChromieUiScaleLabel())
+    f.scaleValue = scaleValue
+
+    local scalePlus = CreateFrame("Button", "ChromieTransmogSettingsScalePlus", f, "UIPanelButtonTemplate")
+    scalePlus:SetWidth(24)
+    scalePlus:SetHeight(22)
+    scalePlus:SetPoint("LEFT", scaleValue, "RIGHT", 6, 0)
+    scalePlus:SetText("+")
+    scalePlus:SetScript("OnClick", function()
+        Transmog:ChromieSetUiScale(Transmog:ChromieUiScale() + UI_SCALE_STEP)
+    end)
+    f.scalePlus = scalePlus
 
     local uncollected = CreateFrame("CheckButton", "ChromieTransmogSettingsUncollected", f, "OptionsCheckButtonTemplate")
     uncollected:SetPoint("TOPLEFT", scaleLabel, "BOTTOMLEFT", -2, -18)
@@ -188,16 +191,8 @@ function Transmog:ChromieSettingsTabEnsure()
     f.uncollectedHigherBoeCheck = makeUncollectedCheck("ChromieTransmogSettingsUncollectedHigherBoe", "BoE", f.uncollectedHigherCheck, 16, "showUncollectedHigherBoe")
     f.uncollectedHigherBopCheck = makeUncollectedCheck("ChromieTransmogSettingsUncollectedHigherBop", "BoP", f.uncollectedHigherBoeCheck, 0, "showUncollectedHigherBop")
 
-    local note = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    note:SetPoint("TOPLEFT", f.uncollectedHigherBopCheck, "BOTTOMLEFT", -32, -8)
-    note:SetWidth(360)
-    note:SetJustifyH("LEFT")
-    note:SetTextColor(0.7, 0.7, 0.7)
-    note:SetText("Until you cache appearances at a Warpweaver, the not-collected status in tooltips will be inaccurate for types you have not scanned.")
-    f.uncollectedNote = note
-
     local debugTitle = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    debugTitle:SetPoint("TOPLEFT", note, "BOTTOMLEFT", 0, -14)
+    debugTitle:SetPoint("TOPLEFT", f.uncollectedHigherBopCheck, "BOTTOMLEFT", -32, -16)
     debugTitle:SetText("Debug")
     f.debugTitle = debugTitle
 
@@ -272,8 +267,23 @@ function Transmog:ChromieSettingsTabSync()
         syncChild(f.uncollectedHigherBoeCheck, higherOn, "showUncollectedHigherBoe")
         syncChild(f.uncollectedHigherBopCheck, higherOn, "showUncollectedHigherBop")
     end
-    if f.scaleDrop then
-        UIDropDownMenu_SetText(f.scaleDrop, self:ChromieUiScaleLabel())
+    if f.scaleValue then
+        local scale = self:ChromieUiScale()
+        f.scaleValue:SetText(self:ChromieUiScaleLabel(scale))
+        if f.scaleMinus then
+            if scale <= UI_SCALE_MIN + 0.001 then
+                f.scaleMinus:Disable()
+            else
+                f.scaleMinus:Enable()
+            end
+        end
+        if f.scalePlus then
+            if scale >= UI_SCALE_MAX - 0.001 then
+                f.scalePlus:Disable()
+            else
+                f.scalePlus:Enable()
+            end
+        end
     end
     f.debugCheck:SetChecked(self.CHAT_PRINTS == 1)
     local nestedOn = self.CHAT_PRINTS == 1
