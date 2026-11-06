@@ -42,6 +42,21 @@ function Transmog:HideSlotGlow(slotName)
     end
 end
 
+-- Fat border means the slot is showing a transmog. A pending undo (toServer 0)
+-- drops it. The circling dots from UpdateSlotGlow stay independent.
+function Transmog:ChromieApplySlotMogBorder(slotName, slotId)
+    local border = slotName and getglobal(slotName .. "BorderHi")
+    if not border then
+        return
+    end
+    local to = self.transmogStatusToServer and slotId and self.transmogStatusToServer[slotId]
+    if to and to ~= 0 then
+        border:Show()
+    else
+        border:Hide()
+    end
+end
+
 -- Updates the native glow from the local/server transmog state.
 function Transmog:UpdateSlotGlow(slotName, slotId)
     local serverItem = self.transmogStatusFromServer[slotId]

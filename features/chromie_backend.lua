@@ -741,8 +741,10 @@ function Transmog:ChromiePublish(slot)
         self.numTransmogs[slot] = {}
     end
     self.numTransmogs[slot][itemClass] = self:tableSize(ids)
-    self:prepareAvailableTransmogs(slot, itemClass)
-    if self.currentTransmogSlot == slot then
+    -- Skip the draw when an item is still uncached. The delay renders the
+    -- finished list, including Hide and the revert row.
+    local ready = self:prepareAvailableTransmogs(slot, itemClass)
+    if ready and self.currentTransmogSlot == slot then
         self:renderAvailableTransmogs(slot, itemClass)
     end
 end

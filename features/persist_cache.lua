@@ -134,7 +134,7 @@ function Transmog:ChromieFavoriteHas(slot, itemId)
     end
     local i = 1
     while list[i] do
-        if tonumber(list[i]) == itemId then
+        if self:ChromieAppearanceSame(list[i], itemId) then
             return true
         end
         i = i + 1
@@ -152,13 +152,18 @@ function Transmog:ChromieFavoriteToggle(slot, itemId)
     if not list then
         return false
     end
+    local removed = false
     local i = 1
     while list[i] do
-        if tonumber(list[i]) == itemId then
+        if self:ChromieAppearanceSame(list[i], itemId) then
             table.remove(list, i)
-            return false
+            removed = true
+        else
+            i = i + 1
         end
-        i = i + 1
+    end
+    if removed then
+        return false
     end
     table.insert(list, 1, itemId)
     return true

@@ -175,9 +175,34 @@ function Transmog:ChromieAccountResetUncollectedTipColor()
     ChromieTransmogDB.uncollectedTipColor = nil
 end
 
+function Transmog:ChromieAccountInvalidateCollectedGroups()
+    self.accountCollectedGroups = nil
+end
+
+function Transmog:ChromieAccountCollectedGroups()
+    if self.accountCollectedGroups then
+        return self.accountCollectedGroups
+    end
+    self:ChromieAccountCollectedEnsure()
+    local groups = {}
+    local collected = ChromieTransmogDB.accountCollected
+    local id, on
+    for id, on in pairs(collected) do
+        if on then
+            local group = self:ChromieAppearanceGroup(id)
+            if group then
+                groups[group] = true
+            end
+        end
+    end
+    self.accountCollectedGroups = groups
+    return groups
+end
+
 -- Gossip scrape: copy live ids into the account set. Never shrink or wipe.
 -- Empty scrapes must not clear a previous OK scrape flag.
 function Transmog:ChromieAccountNoteScan(key, liveSet, liveN, scanOk)
+    self:ChromieAccountInvalidateCollectedGroups()
     self:ChromieAccountCollectedEnsure()
     local function addId(id)
         id = tonumber(id)
@@ -200,6 +225,7 @@ function Transmog:ChromieAccountNoteScan(key, liveSet, liveN, scanOk)
     if scanOk and key then
         ChromieTransmogDB.accountScrapedOk[key] = true
     end
+    self:ChromieAccountInvalidateCollectedGroups()
 end
 
 function Transmog:ChromieAccountNoteSystemMessage(msg)
@@ -215,12 +241,14 @@ function Transmog:ChromieAccountNoteSystemMessage(msg)
     end
     self:ChromieAccountCollectedEnsure()
     ChromieTransmogDB.accountCollected[id] = true
+    self:ChromieAccountInvalidateCollectedGroups()
 end
 
 function Transmog:ChromieAccountDropCollection()
     self:ChromieAccountCollectedEnsure()
     ChromieTransmogDB.accountCollected = {}
     ChromieTransmogDB.accountScrapedOk = {}
+    self:ChromieAccountInvalidateCollectedGroups()
 end
 
 function Transmog:ChromieAccountItemIsCollected(itemId)
@@ -231,6 +259,10 @@ function Transmog:ChromieAccountItemIsCollected(itemId)
     self:ChromieAccountCollectedEnsure()
     local collected = ChromieTransmogDB.accountCollected
     if collected[itemId] or collected[tostring(itemId)] then
+        return true
+    end
+    local group = self:ChromieAppearanceGroup(itemId)
+    if group and self:ChromieAccountCollectedGroups()[group] then
         return true
     end
     return false

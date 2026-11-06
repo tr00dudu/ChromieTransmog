@@ -2,6 +2,33 @@ local Transmog = _G.ChromieTransmog
 local ChromieTransmogFrame_Find = string.find
 local ChromieTransmogFrame_ToNumber = tonumber
 
+-- AppearanceGroups.lua: itemId -> group id (smallest display id of that look).
+-- Missing key means a unique look. Group id is not an item id.
+function Transmog:ChromieAppearanceGroup(itemId)
+    itemId = ChromieTransmogFrame_ToNumber(itemId)
+    if not itemId or itemId <= 1 then
+        return nil
+    end
+    local map = ChromieTransmog_AppearanceGroup
+    if not map then
+        return nil
+    end
+    return map[itemId]
+end
+
+function Transmog:ChromieAppearanceSame(a, b)
+    a = ChromieTransmogFrame_ToNumber(a)
+    b = ChromieTransmogFrame_ToNumber(b)
+    if not a or not b then
+        return false
+    end
+    if a == b then
+        return true
+    end
+    local group = self:ChromieAppearanceGroup(a)
+    return group ~= nil and group == self:ChromieAppearanceGroup(b)
+end
+
 -- Extracts item ID from an item link string.
 function Transmog:IDFromLink(link)
     local itemSplit = ChromieTransmogFrame_Explode(link, ':')

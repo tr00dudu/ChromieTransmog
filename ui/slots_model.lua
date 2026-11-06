@@ -621,13 +621,7 @@ function Transmog_Try(itemId, slotName, newReset)
         Transmog:PreviewUndoOrResetSlot(InventorySlotId)
 
         getglobal(slotName .. 'AutoCast'):Hide()
-
-        if Transmog.transmogStatusFromServer[InventorySlotId] ~= Transmog.transmogStatusToServer[InventorySlotId] then
-            getglobal(slotName .. 'BorderHi'):Show()
-            getglobal(slotName .. 'AutoCast'):SetAlpha(0.3)
-        else
-            getglobal(slotName .. 'BorderHi'):Hide()
-        end
+        Transmog:ChromieApplySlotMogBorder(slotName, InventorySlotId)
         Transmog:UpdateSlotGlow(slotName, InventorySlotId)
 
         local shown = Transmog.previewShown[InventorySlotId]
@@ -639,6 +633,10 @@ function Transmog_Try(itemId, slotName, newReset)
         Transmog:calculateCost()
         Transmog:EnableOutfitSaveButton()
 
+        if Transmog.currentTransmogSlot and Transmog.currentTransmogItemClass then
+            Transmog:renderAvailableTransmogs(Transmog.currentTransmogSlot, Transmog.currentTransmogItemClass)
+        end
+
         return true
     end
 
@@ -646,11 +644,7 @@ function Transmog_Try(itemId, slotName, newReset)
     if itemId == equippedId then
         Transmog:PreviewResetToOriginalSlot(Transmog.currentTransmogSlot)
         itemId = Transmog.previewShown[Transmog.currentTransmogSlot]
-        if Transmog.transmogStatusToServer[Transmog.currentTransmogSlot] == Transmog.transmogStatusFromServer[Transmog.currentTransmogSlot] then
-            getglobal(Transmog.currentTransmogSlotName .. 'BorderHi'):Hide()
-        else
-            getglobal(Transmog.currentTransmogSlotName .. 'BorderHi'):Show()
-        end
+        Transmog:ChromieApplySlotMogBorder(Transmog.currentTransmogSlotName, Transmog.currentTransmogSlot)
     else
         getglobal(Transmog.currentTransmogSlotName .. 'BorderHi'):Show()
         Transmog.transmogStatusToServer[Transmog.currentTransmogSlot] = itemId

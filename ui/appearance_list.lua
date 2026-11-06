@@ -23,9 +23,15 @@ Transmog.availableTransmogsCacheDelay:SetScript("OnUpdate", function()
     local gt = GetTime() * 1000
     local st = (this.startTime + plus) * 1000
     if gt >= st then
-        twfdebug("delay cache: " .. Transmog.availableTransmogsCacheDelay.InventorySlotId)
-        Transmog:prepareAvailableTransmogs(Transmog.availableTransmogsCacheDelay.InventorySlotId, Transmog.availableTransmogsCacheDelay.ItemClass)
-        Transmog.availableTransmogsCacheDelay:Hide()
+        local slot = Transmog.availableTransmogsCacheDelay.InventorySlotId
+        local itemClass = Transmog.availableTransmogsCacheDelay.ItemClass
+        twfdebug("delay cache: " .. slot)
+        -- Hide first so a still-missing item can Show this frame again.
+        this:Hide()
+        local ready = Transmog:prepareAvailableTransmogs(slot, itemClass)
+        if ready and Transmog.currentTransmogSlot == slot and Transmog.currentTransmogItemClass == itemClass then
+            Transmog:renderAvailableTransmogs(slot, itemClass)
+        end
     end
 end)
 
@@ -38,36 +44,73 @@ function Transmog:prepareAvailableTransmogs(slot, itemClass)
     end
 
     self.availableTransmogItems[slot][itemClass] = {}
+    local list = self.availableTransmogItems[slot][itemClass]
+
+    local eqItemLink = nil
+    local inventoryItemLink = GetInventoryItemLink('player', slot)
+    if inventoryItemLink then
+        local _, _, eqItemLink2 = ChromieTransmogFrame_Find(inventoryItemLink, "(item:%d+:%d+:%d+:%d+)")
+        eqItemLink = eqItemLink2
+    end
+    local linkEqId = eqItemLink and self:IDFromLink(eqItemLink)
+    local pinId = self.equippedItems and tonumber(self.equippedItems[slot])
+    if not pinId or pinId <= 1 then
+        pinId = nil
+    end
+    -- Prefer the id the revert pin will look up, then the worn link.
+    local eqId = pinId
+    if not eqId and linkEqId and linkEqId > 1 then
+        eqId = linkEqId
+    end
+
+    local function realLookId(id)
+        id = tonumber(id)
+        if id and id > 1 and id ~= self.HIDDEN_ITEM_ID and id ~= self.UNKNOWN_MOG_ID then
+            return id
+        end
+        return nil
+    end
+    local mogId = realLookId(self.transmogStatusToServer and self.transmogStatusToServer[slot])
+    if not mogId then
+        mogId = realLookId(self.transmogStatusFromServer and self.transmogStatusFromServer[slot])
+    end
+
+    -- Equipped outranks the current mog, which outranks the first gossip id.
+    local function keepRank(id)
+        if eqId and id == eqId then
+            return 2
+        end
+        if mogId and id == mogId then
+            return 1
+        end
+        return 0
+    end
+
+    local seenGroup = {}
 
     for i, itemID in ipairs(self.transmogDataFromServer[slot][itemClass]) do
         itemID = ChromieTransmogFrame_ToNumber(itemID)
         if not itemID or itemID <= 0 or itemID == self.UNKNOWN_MOG_ID then
             -- skip gossip-only placeholders
         else
-            local name, link, quality, level, min_level, class, subclass, _, inv_type, tex = GetItemInfo(itemID)
+            local group = self:ChromieAppearanceGroup(itemID)
+            local prevIndex = group and seenGroup[group]
+            if prevIndex and keepRank(itemID) <= keepRank(list[prevIndex].id) then
+                -- same look already represented by an equal or better id
+            else
+                local name, link, quality, level, min_level, class, subclass, _, inv_type, tex = GetItemInfo(itemID)
 
-            local eqItemLink = nil
-            local inventoryItemLink = GetInventoryItemLink('player', slot)
-            if inventoryItemLink then
-                local _, _, eqItemLink2 = ChromieTransmogFrame_Find(inventoryItemLink, "(item:%d+:%d+:%d+:%d+)")
-                eqItemLink = eqItemLink2
-            end
-
-            if not name then
-                self:cacheItem(itemID)
-                twfdebug("caching item " .. itemID)
-                Transmog.availableTransmogsCacheDelay.InventorySlotId = slot
-                Transmog.availableTransmogsCacheDelay.ItemClass = itemClass
-                Transmog.availableTransmogsCacheDelay:Show()
-                return
-            end
-
-            if name then
-                local reset = false
-                if eqItemLink then
-                    reset = itemID == self:IDFromLink(eqItemLink)
+                if not name then
+                    self:cacheItem(itemID)
+                    twfdebug("caching item " .. itemID)
+                    Transmog.availableTransmogsCacheDelay.InventorySlotId = slot
+                    Transmog.availableTransmogsCacheDelay.ItemClass = itemClass
+                    Transmog.availableTransmogsCacheDelay:Show()
+                    return false
                 end
-                table.insert(self.availableTransmogItems[slot][itemClass], {
+
+                local reset = (linkEqId and itemID == linkEqId) and true or false
+                local entry = {
                     ['id'] = itemID,
                     ['reset'] = reset,
                     ['name'] = name,
@@ -78,7 +121,15 @@ function Transmog:prepareAvailableTransmogs(slot, itemClass)
                     ['equip_slot'] = inv_type,
                     ['tex'] = tex,
                     ['itemLink'] = eqItemLink
-                })
+                }
+                if prevIndex then
+                    list[prevIndex] = entry
+                else
+                    table.insert(list, entry)
+                    if group then
+                        seenGroup[group] = #list
+                    end
+                end
             end
         end
     end
@@ -120,7 +171,7 @@ function Transmog:prepareAvailableTransmogs(slot, itemClass)
                 Transmog.availableTransmogsCacheDelay.InventorySlotId = slot
                 Transmog.availableTransmogsCacheDelay.ItemClass = itemClass
                 Transmog.availableTransmogsCacheDelay:Show()
-                return
+                return false
             end
             local invLink = GetInventoryItemLink("player", slot)
             eqEntry = {
@@ -136,6 +187,19 @@ function Transmog:prepareAvailableTransmogs(slot, itemClass)
             }
         end
         eqEntry.reset = true
+        -- Gossip can omit the worn item and still list a visual duplicate.
+        -- Drop that sibling so the revert row is the only tile for this look.
+        local eqGroup = self:ChromieAppearanceGroup(eqId)
+        if eqGroup then
+            local r = 1
+            while list[r] do
+                if list[r].id ~= self.HIDDEN_ITEM_ID and self:ChromieAppearanceGroup(list[r].id) == eqGroup then
+                    table.remove(list, r)
+                else
+                    r = r + 1
+                end
+            end
+        end
         local at = 1
         if list[1] and list[1].id == self.HIDDEN_ITEM_ID then
             at = 2
@@ -143,9 +207,61 @@ function Transmog:prepareAvailableTransmogs(slot, itemClass)
         table.insert(list, at, eqEntry)
     end
 
+    -- Applied look sits after Hide and the original item. Gossip omits the worn
+    -- mog, so create that tile when the id is known and the list has no row for it.
+    -- The revert row already covers this look when they are the same appearance.
+    local wornId = eqId
+    if not wornId or wornId <= 1 then
+        wornId = linkEqId
+    end
+    if mogId and list and not (wornId and wornId > 1 and self:ChromieAppearanceSame(wornId, mogId)) then
+        local appliedEntry = nil
+        local j = 1
+        while list[j] do
+            if not list[j].reset and list[j].id ~= self.HIDDEN_ITEM_ID
+                and self:ChromieAppearanceSame(list[j].id, mogId) then
+                appliedEntry = table.remove(list, j)
+                break
+            end
+            j = j + 1
+        end
+        if not appliedEntry then
+            local name, link, quality, _, _, class, subclass, _, inv_type, tex = GetItemInfo(mogId)
+            if not name then
+                self:cacheItem(mogId)
+                Transmog.availableTransmogsCacheDelay.InventorySlotId = slot
+                Transmog.availableTransmogsCacheDelay.ItemClass = itemClass
+                Transmog.availableTransmogsCacheDelay:Show()
+                return false
+            end
+            appliedEntry = {
+                ['id'] = mogId,
+                ['reset'] = false,
+                ['name'] = name,
+                ['link'] = link,
+                ['quality'] = quality,
+                ['t1'] = class,
+                ['t2'] = subclass,
+                ['equip_slot'] = inv_type,
+                ['tex'] = tex,
+                ['itemLink'] = nil,
+            }
+        end
+        appliedEntry.applied = true
+        local at = 1
+        if list[1] and list[1].id == self.HIDDEN_ITEM_ID then
+            at = 2
+        end
+        if list[at] and list[at].reset then
+            at = at + 1
+        end
+        table.insert(list, at, appliedEntry)
+    end
+
     self:ChromieFavoritePinList(list, slot)
 
     twfdebug("prepareAvailableTransmogs end")
+    return true
 end
 
 function Transmog:ChromieFavoritePinList(list, slot)
@@ -163,23 +279,35 @@ function Transmog:ChromieFavoritePinList(list, slot)
     if list[insertAt] and list[insertAt].reset then
         insertAt = insertAt + 1
     end
+    if list[insertAt] and list[insertAt].applied then
+        insertAt = insertAt + 1
+    end
     local placed = 0
+    local pinnedGroup = {}
+    local pinnedId = {}
     local f = 1
     while faves[f] do
         local want = tonumber(faves[f])
         f = f + 1
-        if want and want > 1 then
+        local group = want and self:ChromieAppearanceGroup(want)
+        local already = (group and pinnedGroup[group]) or (not group and want and pinnedId[want])
+        if want and want > 1 and not already then
             local j = 1
             local found = nil
             while list[j] do
-                if tonumber(list[j].id) == want and not list[j].reset
-                    and list[j].id ~= self.HIDDEN_ITEM_ID then
+                if not list[j].reset and not list[j].applied and list[j].id ~= self.HIDDEN_ITEM_ID
+                    and self:ChromieAppearanceSame(list[j].id, want) then
                     found = table.remove(list, j)
                     break
                 end
                 j = j + 1
             end
             if found then
+                if group then
+                    pinnedGroup[group] = true
+                else
+                    pinnedId[found.id] = true
+                end
                 table.insert(list, insertAt + placed, found)
                 placed = placed + 1
             end
@@ -204,8 +332,10 @@ function Transmog:ChromieFavoriteLookClick(itemId)
     end
     self:ChromieFavoriteToggle(slot, itemId)
     -- Rebuild from gossip/cache order, then pin remaining faves (same as reopen).
-    self:prepareAvailableTransmogs(slot, itemClass)
-    self:renderAvailableTransmogs(slot, itemClass)
+    -- A deferred rebuild renders itself when the item cache fills.
+    if self:prepareAvailableTransmogs(slot, itemClass) then
+        self:renderAvailableTransmogs(slot, itemClass)
+    end
 end
 
 function ChromieFavoriteLook_OnClick(itemId)
@@ -225,7 +355,16 @@ function Transmog:renderAvailableTransmogs(slot, itemClass)
     self:hideItems(true)
     self:hideItemBorders()
 
-    self:setProgressBar(self:tableSize(self.transmogDataFromServer[slot][itemClass]), self.numTransmogs[slot][itemClass])
+    local shown = self.availableTransmogItems[slot] and self.availableTransmogItems[slot][itemClass]
+    local collected = 0
+    local ci = 1
+    while shown and shown[ci] do
+        if shown[ci].id ~= self.HIDDEN_ITEM_ID then
+            collected = collected + 1
+        end
+        ci = ci + 1
+    end
+    self:setProgressBar(collected, self.numTransmogs[slot][itemClass])
     if self:tableSize(self.transmogDataFromServer[slot][itemClass]) == 0 then
         ChromieTransmogFrameNoTransmogs:SetText("You have yet to uncover any kind of appearance for this item. \nThe appearance will unlock after you equip the item.")
         ChromieTransmogFrameNoTransmogs:Show()
@@ -258,7 +397,7 @@ function Transmog:renderAvailableTransmogs(slot, itemClass)
                 faveTex:Hide()
             end
 
-            if item.id == self.transmogStatusToServer[slot]
+            if self:ChromieAppearanceSame(item.id, self.transmogStatusToServer[slot])
                 or (item.reset and (not self.transmogStatusToServer[slot] or self.transmogStatusToServer[slot] == 0)) then
                 getglobal('TransmogLook' .. itemIndex .. 'Button'):SetNormalTexture('Interface\\AddOns\\ChromieTransmog\\assets\\item_bg_selected')
             else
