@@ -77,6 +77,10 @@ function ChromieTransmogFrame_OnShow()
 
 	twfdebug("ChromieTransmogFrame_OnShow start")
 
+    if Transmog.ChromieApplyUiScale then
+        Transmog:ChromieApplyUiScale()
+    end
+
     Transmog.currentTransmogSlot = nil
     Transmog.currentTransmogSlotName = nil
     Transmog.currentTransmogItemClass = nil

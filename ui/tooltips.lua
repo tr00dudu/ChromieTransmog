@@ -16,7 +16,13 @@ function AddButtonOnEnterTextTooltip(frame, text, ext, error, anchor, x, y)
             FashionTooltip:AddLine("|cffff2020" .. ext)
         else
             FashionTooltip:AddLine(HIGHLIGHT_FONT_COLOR_CODE .. text)
-            if ext then
+            if type(ext) == "table" then
+                local i = 1
+                while ext[i] do
+                    FashionTooltip:AddLine(ext[i])
+                    i = i + 1
+                end
+            elseif ext then
                 FashionTooltip:AddLine(FONT_COLOR_CODE_CLOSE .. ext)
             end
         end

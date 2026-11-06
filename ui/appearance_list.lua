@@ -344,6 +344,45 @@ function ChromieFavoriteLook_OnClick(itemId)
     end
 end
 
+-- Other collected items that share this tile's appearance. The grid shows one id.
+function Transmog:ChromieCollectedAppearanceLines(slot, itemClass, item)
+    local lines = {}
+    if not item or item.id == self.HIDDEN_ITEM_ID then
+        return lines
+    end
+    local group = self:ChromieAppearanceGroup(item.id)
+    if not group then
+        return lines
+    end
+    local ids = self.transmogDataFromServer and self.transmogDataFromServer[slot]
+        and self.transmogDataFromServer[slot][itemClass]
+    local seen = {}
+    if item.name then
+        seen[item.name] = true
+    end
+    local function addId(id)
+        id = tonumber(id)
+        if not id or id <= 1 or self:ChromieAppearanceGroup(id) ~= group then
+            return
+        end
+        local name, _, quality = GetItemInfo(id)
+        if name and not seen[name] then
+            seen[name] = true
+            local _, _, _, hex = GetItemQualityColor(quality or 1)
+            table.insert(lines, (hex or "|cffffffff") .. name)
+        elseif not name and self.cacheItem then
+            self:cacheItem(id)
+        end
+    end
+    local i = 1
+    while ids and ids[i] do
+        addId(ids[i])
+        i = i + 1
+    end
+    addId(self.equippedItems and self.equippedItems[slot])
+    return lines
+end
+
 -- Renders the grid of transmog item buttons for the currently selected slot.
 function Transmog:renderAvailableTransmogs(slot, itemClass)
     twfdebug("renderAvailableTransmogs slot: " .. slot .. " itemClass: " .. itemClass)
@@ -407,15 +446,15 @@ function Transmog:renderAvailableTransmogs(slot, itemClass)
             local _, _, _, color = GetItemQualityColor(item.quality)
             local fave = (not item.reset) and item.id ~= self.HIDDEN_ITEM_ID
                 and self.ChromieFavoriteHas and self:ChromieFavoriteHas(slot, item.id)
+            local tipLines = self:ChromieCollectedAppearanceLines(slot, itemClass, item)
             if item.reset then
-                AddButtonOnEnterTextTooltip(getglobal('TransmogLook' .. itemIndex .. 'Button'), color .. item.name, "Original appearance")
-            elseif item.id == self.HIDDEN_ITEM_ID then
-                AddButtonOnEnterTextTooltip(getglobal('TransmogLook' .. itemIndex .. 'Button'), color .. item.name)
+                table.insert(tipLines, FONT_COLOR_CODE_CLOSE .. "Original appearance")
             elseif fave then
-                AddButtonOnEnterTextTooltip(getglobal('TransmogLook' .. itemIndex .. 'Button'), color .. item.name, "Right-click to unfavorite")
-            else
-                AddButtonOnEnterTextTooltip(getglobal('TransmogLook' .. itemIndex .. 'Button'), color .. item.name, "Right-click to favorite")
+                table.insert(tipLines, FONT_COLOR_CODE_CLOSE .. "Right-click to unfavorite")
+            elseif item.id ~= self.HIDDEN_ITEM_ID then
+                table.insert(tipLines, FONT_COLOR_CODE_CLOSE .. "Right-click to favorite")
             end
+            AddButtonOnEnterTextTooltip(getglobal('TransmogLook' .. itemIndex .. 'Button'), color .. item.name, tipLines[1] and tipLines or nil)
             if item.reset then
                 getglobal('TransmogLook' .. itemIndex .. 'ButtonRevert'):Show()
             end

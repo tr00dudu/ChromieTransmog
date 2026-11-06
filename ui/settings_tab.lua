@@ -1,5 +1,70 @@
 local Transmog = _G.ChromieTransmog
 
+Transmog.UI_SCALES = { 1, 1.2, 1.5, 2 }
+
+function Transmog:ChromieMatchUiScale(scale)
+    scale = tonumber(scale)
+    local scales = self.UI_SCALES
+    local i = 1
+    while scales[i] do
+        if scale and math.abs(scale - scales[i]) < 0.01 then
+            return scales[i]
+        end
+        i = i + 1
+    end
+    return nil
+end
+
+function Transmog:ChromieUiScale()
+    if self.ChromieEnsurePersistDB then
+        self:ChromieEnsurePersistDB()
+    end
+    local s = ChromieTransmogDB and self:ChromieMatchUiScale(ChromieTransmogDB.uiScale)
+    return s or 1
+end
+
+function Transmog:ChromieUiScaleLabel(scale)
+    scale = self:ChromieMatchUiScale(scale) or self:ChromieUiScale()
+    if scale == math.floor(scale) then
+        return tostring(math.floor(scale)) .. "x"
+    end
+    return string.format("%.1f", scale) .. "x"
+end
+
+function Transmog:ChromieApplyUiScale()
+    if ChromieTransmogFrame then
+        ChromieTransmogFrame:SetScale(self:ChromieUiScale())
+    end
+end
+
+function Transmog:ChromieSetUiScale(scale)
+    scale = self:ChromieMatchUiScale(scale) or 1
+    if self.ChromieEnsurePersistDB then
+        self:ChromieEnsurePersistDB()
+    end
+    ChromieTransmogDB.uiScale = scale
+    self:ChromieApplyUiScale()
+    self:ChromieSettingsTabSync()
+end
+
+function ChromieTransmogSettingsScale_Init()
+    local scales = Transmog.UI_SCALES
+    local current = Transmog:ChromieUiScale()
+    local i = 1
+    while scales[i] do
+        local s = scales[i]
+        local info = {}
+        info.text = Transmog:ChromieUiScaleLabel(s)
+        info.arg1 = s
+        info.checked = math.abs(current - s) < 0.01
+        info.func = function(a, b)
+            Transmog:ChromieSetUiScale(tonumber(b) or tonumber(a))
+        end
+        UIDropDownMenu_AddButton(info)
+        i = i + 1
+    end
+end
+
 function Transmog:ChromieSettingsTabEnsure()
     if self.settingsTabFrame then
         return self.settingsTabFrame
@@ -13,8 +78,20 @@ function Transmog:ChromieSettingsTabEnsure()
     title:SetPoint("TOPLEFT", 8, -4)
     title:SetText("Settings")
 
+    local scaleLabel = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    scaleLabel:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -12)
+    scaleLabel:SetText("Window scale")
+    f.scaleLabel = scaleLabel
+
+    local scaleDrop = CreateFrame("Frame", "ChromieTransmogSettingsScale", f, "UIDropDownMenuTemplate")
+    scaleDrop:SetPoint("LEFT", scaleLabel, "RIGHT", -12, -2)
+    UIDropDownMenu_SetWidth(scaleDrop, 70)
+    UIDropDownMenu_Initialize(scaleDrop, ChromieTransmogSettingsScale_Init)
+    UIDropDownMenu_SetText(scaleDrop, self:ChromieUiScaleLabel())
+    f.scaleDrop = scaleDrop
+
     local uncollected = CreateFrame("CheckButton", "ChromieTransmogSettingsUncollected", f, "OptionsCheckButtonTemplate")
-    uncollected:SetPoint("TOPLEFT", title, "BOTTOMLEFT", -2, -10)
+    uncollected:SetPoint("TOPLEFT", scaleLabel, "BOTTOMLEFT", -2, -18)
     local ulabel = getglobal(uncollected:GetName() .. "Text")
     if ulabel then
         ulabel:SetText("Show not collected in tooltips")
@@ -194,6 +271,9 @@ function Transmog:ChromieSettingsTabSync()
         local higherOn = tipOn and Transmog:ChromieAccountFlag("showUncollectedHigher")
         syncChild(f.uncollectedHigherBoeCheck, higherOn, "showUncollectedHigherBoe")
         syncChild(f.uncollectedHigherBopCheck, higherOn, "showUncollectedHigherBop")
+    end
+    if f.scaleDrop then
+        UIDropDownMenu_SetText(f.scaleDrop, self:ChromieUiScaleLabel())
     end
     f.debugCheck:SetChecked(self.CHAT_PRINTS == 1)
     local nestedOn = self.CHAT_PRINTS == 1
